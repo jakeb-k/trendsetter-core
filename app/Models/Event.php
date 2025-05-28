@@ -27,7 +27,7 @@ class Event extends Model
      */
     public function ai_plan()
     {
-        return $this->belongsTo(AIPlan::class);
+        return $this->belongsTo(AiPlan::class);
     }
 
     /**

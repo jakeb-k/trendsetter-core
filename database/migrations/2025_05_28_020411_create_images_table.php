@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('images', function (Blueprint $table) {
             $table->id();
+            $table->morphs('imageable');
             $table->string('file_name');
             $table->text('file_path');
             $table->unsignedBigInteger('file_size');
@@ -22,14 +23,6 @@ return new class extends Migration
             $table->string('alt_text')->nullable();
             $table->text('caption')->nullable();
             $table->timestamps();
-        });
-
-        Schema::create('imageables', function (Blueprint $table) {
-            $table->foreignId('image_id')->constrained()->cascadeOnDelete();
-
-            $table->morphs('imageable');
-
-            $table->unique(['image_id', 'imageable_id', 'imageable_type']);
         });
     }
 

@@ -29,7 +29,7 @@ class Goal extends Model
      */
     public function ai_plans()
     {
-        return $this->hasMany(AIPlan::class);
+        return $this->hasMany(AiPlan::class);
     }
 
     /**

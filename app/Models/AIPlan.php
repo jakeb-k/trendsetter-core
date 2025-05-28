@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class AIPlan extends Model
+class AiPlan extends Model
 {
     use \Illuminate\Database\Eloquent\Factories\HasFactory;
-
+    
+    protected $table = 'ai_plans';
     /**
      * The attributes that are mass assignable.
      *
