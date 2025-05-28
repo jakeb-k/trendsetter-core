@@ -11,6 +11,8 @@ use Tests\TestCase;
 
 class ImageTest extends TestCase
 {
+    use RefreshDatabase, WithFaker;
+
     public function images_can_morph_to_a_user()
     {
         $user = User::factory()->create();
