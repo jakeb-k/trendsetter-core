@@ -8,11 +8,13 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class ImageTest extends TestCase
 {
     use RefreshDatabase, WithFaker;
 
+    #[Test]
     public function images_can_morph_to_a_user()
     {
         $user = User::factory()->create();
@@ -24,6 +26,7 @@ class ImageTest extends TestCase
         $this->assertEquals($user->id, $image->imageable->id);
     }
 
+    #[Test]
     public function images_can_morph_to_event_feedback()
     {
         $eventFeedback = EventFeedback::factory()->create();
