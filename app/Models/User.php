@@ -46,4 +46,34 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * A user can have many goals.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function goals()
+    {
+        return $this->hasMany(Goal::class);
+    }
+
+    /**
+     * A user can have feedback for many events
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function event_feedback()
+    {
+        return $this->hasMany(EventFeedback::class);
+    }
+
+    /**
+     * A user can have many morphable images. 
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+     */
+    public function images()
+    {
+        return $this->morphMany(Image::class, 'imageable');
+    }
 }

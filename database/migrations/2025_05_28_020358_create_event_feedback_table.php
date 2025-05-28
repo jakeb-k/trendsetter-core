@@ -13,6 +13,11 @@ return new class extends Migration
     {
         Schema::create('event_feedback', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('event_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->text('note');
+            $table->enum('status', ['completed', 'skipped', 'partial', 'struggled', 'nailed_it']);
+            $table->string('mood')->nullable();
             $table->timestamps();
         });
     }

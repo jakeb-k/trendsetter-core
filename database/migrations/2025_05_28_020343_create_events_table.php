@@ -13,6 +13,13 @@ return new class extends Migration
     {
         Schema::create('events', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('ai_plan_id')->constrained()->onDelete('cascade');
+            $table->foreignId('goal_id')->constrained()->onDelete('cascade');
+            $table->string('title');
+            $table->text('description');
+            $table->dateTime('scheduled_for');
+            $table->dateTime('completed_at')->nullable();
+            $table->integer('points');
             $table->timestamps();
         });
     }

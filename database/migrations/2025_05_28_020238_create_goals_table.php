@@ -13,6 +13,13 @@ return new class extends Migration
     {
         Schema::create('goals', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->string('title');
+            $table->text('description');
+            $table->string('category');
+            $table->enum('status', ['active', 'completed', 'abandoned', 'paused', 'stalled', 'needs_review']);
+            $table->date('start_date');
+            $table->date('end_date');
             $table->timestamps();
         });
     }
