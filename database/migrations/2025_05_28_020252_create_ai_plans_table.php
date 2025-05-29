@@ -16,7 +16,6 @@ return new class extends Migration
             $table->foreignId('goal_id')->constrained()->onDelete('cascade');
             $table->integer('version');
             $table->json('prompt_log');
-            $table->json('response');
             $table->timestamps();
         });
     }

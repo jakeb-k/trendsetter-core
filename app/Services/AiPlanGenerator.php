@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\AiPlan;
+use App\Models\Goal;
+use Illuminate\Support\Facades\Auth;
 use OpenAI;
 
 class AiPlanGenerator
@@ -15,7 +18,7 @@ class AiPlanGenerator
 
     public function generatePlan(string $goalDescription, array $context = [])
     {
-        $today = now()->toDateString(); 
+        $today = now()->toDateString();
         $messages = [
             [
                 'role' => 'system',
@@ -47,6 +50,13 @@ Your output must be one of the following valid JSON formats:
 2. If enough information is provided:
 {
   "finished": true,
+  "goal": {
+    "title": "Goal title",
+    "description": "Goal description",
+    "category": "Goal category",
+    "start_date": "2025-01-01",
+    "end_date": "2025-12-31"
+  }
   "events": [
     {
       "title": "Step 1 name",
@@ -63,6 +73,7 @@ Your output must be one of the following valid JSON formats:
 
 DO NOT include any extra commentary, markdown, or explanations. Return only valid JSON.
 EOT
+            ,
             ],
             [
                 'role' => 'user',
@@ -76,5 +87,29 @@ EOT
         ]);
 
         return $response['choices'][0]['message']['content'] ?? [];
+    }
+
+    public function storePlanAndGoal($aiResponse, $context)
+    {
+        $goalContent = $aiResponse['goal'];
+        $goal = Goal::create([
+            'title' => $goalContent['title'],
+            'category' => $goalContent['category'],
+            'start_date' => $goalContent['start_date'],
+            'end_date' => $goalContent['end_date'],
+            'status' => 'active',
+            'description' => $goalContent['description'],
+            'user_id' => Auth::user()->id,
+        ]);
+        $aiPlan = AiPlan::create([
+            'goal_id' => $goal->id,
+            'version' => 1,
+            'prompt_log' => json_encode($context),
+        ]);
+
+        return [
+            'goal' => $goal,
+            'ai_plan' => $aiPlan,
+        ];
     }
 }
