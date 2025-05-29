@@ -17,6 +17,7 @@ return new class extends Migration
             $table->foreignId('goal_id')->constrained()->onDelete('cascade');
             $table->string('title');
             $table->text('description');
+            $table->json('repeat')->nullable();
             $table->dateTime('scheduled_for');
             $table->dateTime('completed_at')->nullable();
             $table->integer('points');
