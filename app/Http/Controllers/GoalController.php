@@ -33,6 +33,7 @@ class GoalController extends Controller
                 'goal' => $goalAndPlan['goal'],
                 'ai_plan' => $goalAndPlan['ai_plan'],
                 'events' => $events,
+                'finished' => true, 
             ]);
         } else {
             return response()->json([
