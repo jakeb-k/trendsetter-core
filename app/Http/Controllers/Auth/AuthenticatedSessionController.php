@@ -48,10 +48,10 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $user = $request->user();
-
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
+            'goals' => $user->goals->load(['events']), 
             'user' => $user,
             'token' => $token,
         ]);
