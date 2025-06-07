@@ -9,6 +9,19 @@ class Event extends Model
 {
     /** @use HasFactory<\Database\Factories\EventFactory> */
     use HasFactory;
+    protected $guarded = ['id'];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'repeat' => 'json',
+        ];
+    }
 
     /**
      * An event belongs to a goal
@@ -39,6 +52,4 @@ class Event extends Model
     {
         return $this->hasMany(EventFeedback::class);
     }
-
-
 }
