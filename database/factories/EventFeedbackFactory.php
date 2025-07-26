@@ -24,6 +24,7 @@ class EventFeedbackFactory extends Factory
             'note' => fake()->sentence(),
             'status' => fake()->randomElement(['completed', 'skipped', 'partial', 'struggled', 'nailed_it']),
             'mood' => fake()->randomElement(['happy', 'meh', 'frustrated']),
+            'created_at' => now()->subDays(rand(0, 30)),
         ];
     }
 }
