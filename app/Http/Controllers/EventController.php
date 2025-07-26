@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 
 class EventController extends Controller
@@ -11,7 +12,7 @@ class EventController extends Controller
     {
         //@todo Implement logic that gets the current streak count
         return [
-            'feedback' => $event->feedback(),
+            'feedback' => $event->feedback()->orderBy('created_at', 'desc')->get(),
         ];
     }
 

@@ -17,7 +17,7 @@ class EventFeedbackSeeder extends Seeder
         $events = Event::all();
         foreach ($events as $event) {
             EventFeedback::factory(5)
-                ->make([
+                ->create([
                     'event_id' => $event->id,
                     'user_id' => $event->goal->user_id,
                 ])
