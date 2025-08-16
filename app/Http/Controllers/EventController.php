@@ -34,7 +34,7 @@ class EventController extends Controller
             'mood' => $request->mood,
         ]);
 
-        return response()->json([$newEventFeedback], 201);
+        return response()->json($newEventFeedback, 201);
     }
 
     public function updateEventFeedback(Request $request, Event $event)
