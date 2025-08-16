@@ -10,7 +10,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/ai-plan/chat', [GoalController::class, 'generatePlan'])->name('api.ai.plan.chat');
         Route::get('/events/{event}/feedback', [EventController::class, 'getEventFeedback'])->name('api.event.feedback');
-        Route::post('/events/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');
+        Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');
         Route::put('/events/{event}/feedback', [EventController::class, 'updateEventFeedback'])->name('api.event.feedback.update');
         Route::delete('/events/{event}/feedback', [EventController::class, 'deleteEventFeedback'])->name('api.event.feedback.delete');
     });
