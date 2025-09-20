@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\EventFeedback;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,18 +24,31 @@ class EventController extends Controller
         $request->validate([
             'note' => 'required|string|max:255',
             'status' => 'required|in:completed,skipped,partial,struggled,nailed_it',
-            'mood' => 'required|in:happy,meh,frustrated',
+            'mood' => 'required|in:happy,meh,good,frustrated',
         ]);
 
-        $newEventFeedback = EventFeedback::create([
+        $eventFeedback = EventFeedback::where('user_id', Auth::id())
+            ->where('event_id', $event->id)
+            ->whereDate('created_at', Carbon::today())
+            ->first();
+
+        $payload = [
             'event_id' => $event->id,
-            'user_id' => Auth::user()->id,
+            'user_id' => Auth::id(),
             'note' => $request->note,
             'status' => $request->status,
             'mood' => $request->mood,
-        ]);
+        ];
 
-        return response()->json($newEventFeedback, 201);
+        if ($eventFeedback) {
+            $eventFeedback->update($payload);
+            $statusCode = 200;
+        } else {
+            $eventFeedback = EventFeedback::create($payload);
+            $statusCode = 201;
+        }
+
+        return response()->json($eventFeedback, $statusCode);
     }
 
     public function updateEventFeedback(Request $request, Event $event)
