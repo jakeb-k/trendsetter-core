@@ -21,7 +21,7 @@ class AiPlanFactory extends Factory
             'goal_id' => Goal::factory(),
             'version' => 1,
             'prompt_log' => json_encode(['prompt' => 'How do I get better at X?']),
-            'response' => json_encode(['plan' => 'Do this for 4 weeks...']),
+           // 'response' => json_encode(['plan' => 'Do this for 4 weeks...']),
         ];
     }
 }
