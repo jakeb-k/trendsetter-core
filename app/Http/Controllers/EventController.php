@@ -50,14 +50,4 @@ class EventController extends Controller
 
         return response()->json($eventFeedback, $statusCode);
     }
-
-    public function updateEventFeedback(Request $request, Event $event)
-    {
-        //
-    }
-
-    public function deleteEventFeedback(Event $event)
-    {
-        //
-    }
 }
