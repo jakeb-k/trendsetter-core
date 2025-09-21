@@ -14,6 +14,8 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
 
+        Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
+
         Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');
 
         Route::put('/events/{event}/feedback', [EventController::class, 'updateEventFeedback'])->name('api.event.feedback.update');

@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class EventController extends Controller
 {
@@ -22,10 +23,32 @@ class EventController extends Controller
     public function storeEvent(Request $request)
     {
         $request->validate([
+            'goal_id' => 'required|in:id,goals',
             'title' => 'required|string|max:50',
             'description' => 'nullable|string|max:255',
-            'goal_id' => 'required|in:id,goals'
-        ])
+            'frequency' => ['required', Rule::in(['weekly', 'monthly'])],
+            'times_per_week' => 'required|numeric|gt:0',
+            'duration' => 'required|numeric|gt:0',
+            'start_date'=> 'nullable|date|after_or_equal:today'
+        ]);
+
+        $startDate = is_null($request->start_date) ? Carbon::today() : $request->start_date;
+        $repeat = [
+            'frequency' => $request->frequency,
+            'times_per_week' => $request->times_per_week,
+            'duration_in_weeks' => $request->duration
+        ];
+        // @TODO: add a legit points system in here
+        $newEvent = Event::create([
+            'goal_id' => $request->goal_id,
+            'title' => $request->title,
+            'description' => $request->description, 
+            'repeat' => json_encode($repeat),
+            'scheduled_for' => $startDate,
+            'points' => 0
+        ]);
+
+        return response()->json($newEvent);
     }
 
     /**
