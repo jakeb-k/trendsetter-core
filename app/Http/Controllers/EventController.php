@@ -23,29 +23,30 @@ class EventController extends Controller
     public function storeEvent(Request $request)
     {
         $request->validate([
-            'goal_id' => 'required|in:id,goals',
+            'goal_id' => 'required|numeric|exists:goals,id',
             'title' => 'required|string|max:50',
             'description' => 'nullable|string|max:255',
             'frequency' => ['required', Rule::in(['weekly', 'monthly'])],
-            'times_per_week' => 'required|numeric|gt:0',
-            'duration' => 'required|numeric|gt:0',
-            'start_date'=> 'nullable|date|after_or_equal:today'
+            'times_per_week' => 'required|numeric|gt:0|max:7',
+            'duration_in_weeks' => 'required|numeric|gt:0',
+            'start_date' => 'nullable|date|after_or_equal:today',
         ]);
 
-        $startDate = is_null($request->start_date) ? Carbon::today() : $request->start_date;
+        $startDate = is_null($request->start_date) ? Carbon::today()->toDateString() : Carbon::parse($request->start_date)->toDateString();
+
         $repeat = [
             'frequency' => $request->frequency,
             'times_per_week' => $request->times_per_week,
-            'duration_in_weeks' => $request->duration
+            'duration_in_weeks' => $request->duration_in_weeks,
         ];
         // @TODO: add a legit points system in here
         $newEvent = Event::create([
             'goal_id' => $request->goal_id,
             'title' => $request->title,
-            'description' => $request->description, 
-            'repeat' => json_encode($repeat),
+            'description' => $request->description,
+            'repeat' => $repeat,
             'scheduled_for' => $startDate,
-            'points' => 0
+            'points' => 0,
         ]);
 
         return response()->json($newEvent);

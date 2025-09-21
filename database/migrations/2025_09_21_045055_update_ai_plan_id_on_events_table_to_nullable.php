@@ -11,7 +11,7 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::table('events', function (Blueprint $table) {
-            $table->foreignId('event_id')->nullable()->constrained()->onDelete('cascade')->change();
+            $table->unsignedBigInteger('ai_plan_id')->nullable()->change();
         });
     }
 
@@ -21,7 +21,7 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::table('events', function (Blueprint $table) {
-            $table->foreignId('event_id')->constrained()->onDelete('cascade')->change();
+            $table->foreignId('ai_plan_id')->constrained()->onDelete('cascade')->change();
         });
     }
 };
