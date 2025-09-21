@@ -19,6 +19,22 @@ class EventController extends Controller
         ];
     }
 
+    public function storeEvent(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:50',
+            'description' => 'nullable|string|max:255',
+            'goal_id' => 'required|in:id,goals'
+        ])
+    }
+
+    /**
+     * Stores or updates event feedback for the current day
+     *
+     * @param Request $request
+     * @param Event $event
+     * @return JsonResponse
+     */
     public function storeEventFeedback(Request $request, Event $event)
     {
         $request->validate([

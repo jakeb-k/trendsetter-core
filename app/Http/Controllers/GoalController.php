@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Services\AiPlanGenerator;
 use App\Services\EventGenerator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class GoalController extends Controller
 {
@@ -40,6 +42,18 @@ class GoalController extends Controller
                 'message' => $decodedResponse['message'],
             ]);
         }
+    }
+
+    /**
+     * Fetch the users goals
+     *
+     * @return JsonResponse
+     */
+    public function getGoals()
+    {
+        return response()->json([
+            'goals' => Auth::user()->goals,
+        ]);
     }
 
 }
