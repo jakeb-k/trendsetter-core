@@ -20,6 +20,12 @@ class EventController extends Controller
         ];
     }
 
+    /**
+     * Storing new events
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
     public function storeEvent(Request $request)
     {
         $request->validate([
