@@ -33,9 +33,9 @@ Once enough information is collected each event must:
 - Be adaptable to any type of goal (fitness, business, education, personal growth, etc.)
 
 For habits or routines that repeat (e.g., workouts, journaling), include a "repeat" object with:
-  - frequency (e.g., "weekly")
-  - times_per_week (e.g., 3)
-  - duration_in_weeks (e.g., 16)
+  - frequency -> this value MUST be one of the following ['daily','weekly','bi-monthly', 'monthly' ]
+  - times_per_week -> This value should ONLY be set if the frequency is weekly  else it should be 0
+  - duration_in_week -> This value represents the scope of when the event will occur e.g. 16 for 16 weeks, and this value should ALWAYS be represented in the weekly amount
 
 Only one event should be created for the routine, with repeat metadata. Do NOT duplicate repeating events.
 
