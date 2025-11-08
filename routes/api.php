@@ -11,6 +11,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/ai-plan/chat', [GoalController::class, 'generatePlan'])->name('api.ai.plan.chat');
 
         Route::get('/events/{event}/feedback', [EventController::class, 'getEventFeedback'])->name('api.event.feedback');
+        
+        Route::get('goals/{goal}/feedback', [GoalController::class, 'getGoalEventFeedback'])->name('api.goal.feedback');
 
         Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
 
