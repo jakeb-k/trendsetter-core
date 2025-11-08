@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
+use App\Models\Event;
+use App\Models\Goal;
 use App\Services\AiPlanGenerator;
 use App\Services\EventGenerator;
 use Illuminate\Http\Request;
@@ -55,5 +56,21 @@ class GoalController extends Controller
             'goals' => Auth::user()->goals,
         ]);
     }
+    
+    /**
+     * Get the all the event feedback for a goal
+     *
+     * @param Goal $goal
+     * @return JsonResponse
+     */
+    public function getGoalEventFeedback(Goal $goal)
+    {
+        $eventFeedback = $goal->events()->map(function ($event) {
+            return $event->feedback; 
+        }); 
 
+        return response()->json([
+            'eventFeedback' => $eventFeedback
+        ]); 
+    }
 }
