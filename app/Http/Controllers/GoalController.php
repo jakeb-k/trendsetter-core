@@ -65,12 +65,15 @@ class GoalController extends Controller
      */
     public function getGoalEventFeedback(Goal $goal)
     {
-        $eventFeedback = $goal->events()->map(function ($event) {
-            return $event->feedback; 
-        }); 
+        $eventFeedback = []; 
+        foreach($goal->events as $event){
+            if($event->feedback()->exists()){
+                $eventFeedback[$event->title] = $event->feedback;
+            }
+        }
 
         return response()->json([
-            'eventFeedback' => $eventFeedback
+            'feedback' => collect($eventFeedback)
         ]); 
     }
 }

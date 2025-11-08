@@ -12,7 +12,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/events/{event}/feedback', [EventController::class, 'getEventFeedback'])->name('api.event.feedback');
         
-        Route::get('goals/{goal}/feedback', [EventController::class, 'getEventFeedback'])->name('api.goal.feedback');
+        Route::get('goals/{goal}/feedback', [GoalController::class, 'getGoalEventFeedback'])->name('api.goal.feedback');
 
         Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
 
