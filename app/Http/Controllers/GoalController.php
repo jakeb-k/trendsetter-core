@@ -56,7 +56,27 @@ class GoalController extends Controller
             'goals' => Auth::user()->goals,
         ]);
     }
-    
+
+    /**
+     * Get the all the event feedback for a goal
+     *
+     * @param Goal $goal
+     * @return JsonResponse
+     */
+    public function getGoalEventFeedback(Goal $goal)
+    {
+        $eventFeedback = []; 
+        foreach($goal->events as $event){
+            if($event->feedback()->exists()){
+                $eventFeedback[$event->title] = $event->feedback;
+            }
+        }
+
+        return response()->json([
+            'feedback' => collect($eventFeedback)
+        ]); 
+    }
+
     /**
      * Store a new goal
      *
