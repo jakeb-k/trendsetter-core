@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Event;
 use App\Models\Goal;
 use App\Services\AiPlanGenerator;
 use App\Services\EventGenerator;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -63,17 +63,25 @@ class GoalController extends Controller
      * @param Goal $goal
      * @return JsonResponse
      */
-    public function getGoalEventFeedback(Goal $goal)
+    public function storeGoal(Request $request)
     {
-        $eventFeedback = []; 
-        foreach($goal->events as $event){
-            if($event->feedback()->exists()){
-                $eventFeedback[$event->title] = $event->feedback;
-            }
-        }
+        $request->validate([
+            'title' => 'required|string|max:50',
+            'description' => 'required|string|max:255',
+            'end_date' => 'required|date|after:today',
+        ]);
+
+        $newGoal = Goal::create([
+            'title' => $request->title,
+            'description' => $request->description,
+            'end_date' => $request->end_date,
+            'start_date' => Carbon::now(),
+            'status' => 'active',
+            'category' => 'User Created',
+        ]);
 
         return response()->json([
-            'feedback' => collect($eventFeedback)
+            'goal' => $newGoal
         ]); 
     }
 }
