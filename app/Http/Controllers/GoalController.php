@@ -58,9 +58,9 @@ class GoalController extends Controller
     }
     
     /**
-     * Get the all the event feedback for a goal
+     * Store a new goal
      *
-     * @param Goal $goal
+     * @param Request $request
      * @return JsonResponse
      */
     public function storeGoal(Request $request)
@@ -75,8 +75,9 @@ class GoalController extends Controller
             'title' => $request->title,
             'description' => $request->description,
             'end_date' => $request->end_date,
-            'start_date' => Carbon::now(),
+            'start_date' => Carbon::now()->addYear(),
             'status' => 'active',
+            'user_id' => Auth::user()->id,
             'category' => 'User Created',
         ]);
 
