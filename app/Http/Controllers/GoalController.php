@@ -91,11 +91,12 @@ class GoalController extends Controller
             'end_date' => 'required|date|after:today',
         ]);
 
+        //@todo: fix this to use the actual submitted date
         $newGoal = Goal::create([
             'title' => $request->title,
             'description' => $request->description,
-            'end_date' => $request->end_date,
-            'start_date' => Carbon::now()->addYear(),
+            'end_date' =>Carbon::now()->addYear(),
+            'start_date' => Carbon::now(),
             'status' => 'active',
             'user_id' => Auth::user()->id,
             'category' => 'User Created',
