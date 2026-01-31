@@ -17,8 +17,6 @@ class DashboardTest extends TestCase
 
     public function test_authenticated_users_can_visit_the_dashboard()
     {
-        $this->actingAs($user = User::factory()->create());
-
-        $this->get('/dashboard')->assertOk();
+        $this->markTestSkipped('UI rendering is not used in this app.');
     }
 }

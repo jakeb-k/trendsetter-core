@@ -2,7 +2,10 @@
 
 namespace Database\Factories;
 
+use App\Models\Event;
+use App\Models\EventFeedback;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -27,5 +30,32 @@ class GoalFactory extends Factory
             'end_date' => now()->addWeeks(4),
         ];
 
+    }
+
+    public function readyForCompletion(): self
+    {
+        return $this
+            ->state(fn () => [
+                'start_date' => Carbon::now()->subWeeks(4),
+                'end_date' => Carbon::now()->subDays(2),
+                'status' => 'active',
+            ])
+            ->afterCreating(function ($goal) {
+                $events = Event::factory()
+                    ->count(2)
+                    ->for($goal)
+                    ->create();
+
+                foreach ($events as $event) {
+                    EventFeedback::factory()
+                        ->for($event)
+                        ->for($goal->user)
+                        ->create([
+                            'status' => 'nailed_it',
+                            'mood' => 'happy',
+                            'created_at' => Carbon::now()->subDays(1),
+                        ]);
+                }
+            });
     }
 }
