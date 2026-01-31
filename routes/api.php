@@ -18,6 +18,14 @@ Route::prefix('v1')->group(function () {
 
         Route::post('/goals', [GoalController::class, 'storeGoal'])->name('api.goals.store');
 
+        Route::get('/goals/completed', [GoalController::class, 'getCompletedGoals'])->name('api.goals.completed');
+
+        Route::post('/goals/{goal}/complete', [GoalController::class, 'completeGoal'])->name('api.goals.complete');
+
+        Route::post('/goals/{goal}/review', [GoalController::class, 'createGoalReview'])->name('api.goals.review.store');
+
+        Route::get('/goals/{goal}/review', [GoalController::class, 'getGoalReview'])->name('api.goals.review.get');
+
         Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
 
         Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');

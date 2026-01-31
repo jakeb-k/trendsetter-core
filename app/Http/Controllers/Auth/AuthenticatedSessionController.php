@@ -51,7 +51,7 @@ class AuthenticatedSessionController extends Controller
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'goals' => $user->goals->load(['events']), 
+            'goals' => $user->goals()->with(['events', 'events.feedback'])->get(), 
             'user' => $user,
             'token' => $token,
         ]);

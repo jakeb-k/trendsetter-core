@@ -12,6 +12,15 @@ class Goal extends Model
 
     protected $guarded = ['id'];
 
+    protected function casts(): array
+    {
+        return [
+            'start_date' => 'date',
+            'end_date' => 'date',
+            'completed_at' => 'datetime',
+        ];
+    }
+
     /**
      * A goal belongs to a user.
      *
@@ -40,6 +49,11 @@ class Goal extends Model
     public function events()
     {
         return $this->hasMany(Event::class);
+    }
+
+    public function review()
+    {
+        return $this->hasOne(GoalReview::class);
     }
 
 }
