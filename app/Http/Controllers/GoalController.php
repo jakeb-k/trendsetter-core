@@ -6,7 +6,6 @@ use App\Models\Goal;
 use App\Models\GoalReview;
 use App\Services\AiPlanGenerator;
 use App\Services\EventGenerator;
-use App\Services\GoalCompletionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -53,15 +52,10 @@ class GoalController extends Controller
      *
      * @return JsonResponse
      */
-    public function getGoals(GoalCompletionService $completionService)
+    public function getGoals()
     {
-        $goals = Auth::user()->goals()->with(['events', 'events.feedback'])->get();
-        $payload = $goals->map(function (Goal $goal) use ($completionService) {
-            return $this->formatGoalWithCompletion($goal, $completionService);
-        });
-
         return response()->json([
-            'goals' => $payload,
+            'goals' => Auth::user()->goals()->with(['events', 'events.feedback'])->get(),
         ]);
     }
 
@@ -91,7 +85,7 @@ class GoalController extends Controller
      * @param Request $request
      * @return JsonResponse
      */
-    public function storeGoal(Request $request, GoalCompletionService $completionService)
+    public function storeGoal(Request $request)
     {
         $request->validate([
             'title' => 'required|string|max:50',
@@ -111,38 +105,35 @@ class GoalController extends Controller
         ]);
 
         return response()->json([
-            'goal' => $this->formatGoalWithCompletion($newGoal, $completionService),
+            'goal' => $newGoal,
         ]); 
     }
 
-    public function completeGoal(Goal $goal, GoalCompletionService $completionService)
+    public function completeGoal(Request $request, Goal $goal)
     {
         if ($goal->user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $computed = $completionService->compute($goal);
-        if (!$computed['is_completable']) {
-            return response()->json([
-                'message' => 'Goal is not completable yet.',
-                'reasons' => $computed['completion_reasons'],
-            ], 422);
-        }
+        $validated = $request->validate([
+            'completion_reasons' => 'nullable|array',
+            'completion_reasons.*' => 'string',
+        ]);
 
         $goal->update([
             'status' => 'completed',
             'completed_at' => Carbon::now(),
-            'completion_reason' => empty($computed['completion_reasons'])
+            'completion_reason' => empty($validated['completion_reasons'] ?? null)
                 ? null
-                : implode(',', $computed['completion_reasons']),
+                : implode(',', $validated['completion_reasons']),
         ]);
 
         return response()->json([
-            'goal' => $this->formatGoalWithCompletion($goal->fresh(['events', 'events.feedback']), $completionService),
+            'goal' => $goal->fresh(['events', 'events.feedback']),
         ]);
     }
 
-    public function createGoalReview(Request $request, Goal $goal, GoalCompletionService $completionService)
+    public function createGoalReview(Request $request, Goal $goal)
     {
         if ($goal->user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -178,17 +169,8 @@ class GoalController extends Controller
             'lessons' => 'required|string|max:5000',
             'next_steps' => 'required|string|max:5000',
             'advice' => 'nullable|string|max:5000',
+            'stats_snapshot' => 'nullable|array',
         ]);
-
-        $computed = $completionService->compute($goal);
-        $statsSnapshot = [
-            'points_earned' => $computed['points_earned'],
-            'max_possible_points' => $computed['max_possible_points'],
-            'threshold_points' => $computed['threshold_points'],
-            'completion_reasons' => $computed['completion_reasons'],
-            'status_counts' => $computed['status_counts'],
-            'mood_counts' => $computed['mood_counts'],
-        ];
 
         $review = GoalReview::create([
             'goal_id' => $goal->id,
@@ -201,7 +183,7 @@ class GoalController extends Controller
             'lessons' => $validated['lessons'],
             'next_steps' => $validated['next_steps'],
             'advice' => $validated['advice'] ?? null,
-            'stats_snapshot' => $statsSnapshot,
+            'stats_snapshot' => $validated['stats_snapshot'] ?? null,
         ]);
 
         return response()->json([
@@ -225,7 +207,7 @@ class GoalController extends Controller
         ]);
     }
 
-    public function getCompletedGoals(GoalCompletionService $completionService)
+    public function getCompletedGoals()
     {
         $goals = Auth::user()->goals()
             ->where('status', 'completed')
@@ -233,32 +215,17 @@ class GoalController extends Controller
             ->orderByDesc('completed_at')
             ->get();
 
-        $payload = $goals->map(function (Goal $goal) use ($completionService) {
-            $formatted = $this->formatGoalWithCompletion($goal, $completionService);
-            $formatted['review_summary'] = $goal->review
-                ? [
-                    'outcome' => $goal->review->outcome,
-                    'completed_at' => $goal->completed_at,
-                ]
-                : null;
-            return $formatted;
-        });
-
         return response()->json([
-            'goals' => $payload,
+            'goals' => $goals->map(function (Goal $goal) {
+                $payload = $goal->toArray();
+                $payload['review_summary'] = $goal->review
+                    ? [
+                        'outcome' => $goal->review->outcome,
+                        'completed_at' => $goal->completed_at,
+                    ]
+                    : null;
+                return $payload;
+            }),
         ]);
-    }
-
-    private function formatGoalWithCompletion(Goal $goal, GoalCompletionService $completionService): array
-    {
-        $computed = $completionService->compute($goal);
-        $payload = $goal->toArray();
-        $payload['points_earned'] = $computed['points_earned'];
-        $payload['max_possible_points'] = $computed['max_possible_points'];
-        $payload['threshold_points'] = $computed['threshold_points'];
-        $payload['is_completable'] = $computed['is_completable'];
-        $payload['completion_reasons'] = $computed['completion_reasons'];
-
-        return $payload;
     }
 }

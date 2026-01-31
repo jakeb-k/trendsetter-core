@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Services\GoalCompletionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -43,27 +42,16 @@ class AuthenticatedSessionController extends Controller
      * @param LoginRequest $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeApi(LoginRequest $request, GoalCompletionService $completionService)
+    public function storeApi(LoginRequest $request)
     {
         \Log::info('API Login Attempt');
         $request->authenticate();
 
         $user = $request->user();
         $token = $user->createToken('auth_token')->plainTextToken;
-        $goals = $user->goals()->with(['events', 'events.feedback'])->get();
-        $payload = $goals->map(function ($goal) use ($completionService) {
-            $computed = $completionService->compute($goal);
-            $goalArray = $goal->toArray();
-            $goalArray['points_earned'] = $computed['points_earned'];
-            $goalArray['max_possible_points'] = $computed['max_possible_points'];
-            $goalArray['threshold_points'] = $computed['threshold_points'];
-            $goalArray['is_completable'] = $computed['is_completable'];
-            $goalArray['completion_reasons'] = $computed['completion_reasons'];
-            return $goalArray;
-        });
 
         return response()->json([
-            'goals' => $payload, 
+            'goals' => $user->goals()->with(['events', 'events.feedback'])->get(), 
             'user' => $user,
             'token' => $token,
         ]);
