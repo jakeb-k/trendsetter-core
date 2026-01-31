@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\EventFeedback;
+use App\Models\Goal;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
@@ -37,6 +38,13 @@ class EventController extends Controller
             'duration_in_weeks' => 'required|numeric|gt:0',
             'start_date' => 'nullable|date|after_or_equal:today',
         ]);
+
+        $goal = Goal::find($request->goal_id);
+        if ($goal && $goal->status === 'completed') {
+            return response()->json([
+                'message' => 'Cannot add events to a completed goal.',
+            ], 422);
+        }
 
         $startDate = is_null($request->start_date) ? Carbon::today()->toDateString() : Carbon::parse($request->start_date)->toDateString();
 
