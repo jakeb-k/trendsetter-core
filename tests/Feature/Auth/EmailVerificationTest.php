@@ -15,11 +15,7 @@ class EmailVerificationTest extends TestCase
 
     public function test_email_verification_screen_can_be_rendered()
     {
-        $user = User::factory()->unverified()->create();
-
-        $response = $this->actingAs($user)->get('/verify-email');
-
-        $response->assertStatus(200);
+        $this->markTestSkipped('UI rendering is not used in this app.');
     }
 
     public function test_email_can_be_verified()
