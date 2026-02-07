@@ -15,13 +15,19 @@ use Illuminate\Validation\Rule;
 
 class PartnerInviteController extends Controller
 {
-    public function index(Goal $goal)
+    /**
+     * List partner invites for a specific goal owned by the authenticated user.
+     *
+     * @param Goal $goal
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function listGoalPartnerInvites(Goal $goal)
     {
         if ($goal->user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $this->expireStaleInvites($goal->id);
+        $this->expirePendingInvitesForGoal($goal->id);
 
         $invites = GoalPartnerInvite::query()
             ->where('goal_id', $goal->id)
@@ -33,12 +39,15 @@ class PartnerInviteController extends Controller
         ]);
     }
 
-    public function store(Request $request, Goal $goal)
+    /**
+     * Create and send a new partner invite for a goal.
+     *
+     * @param Request $request
+     * @param Goal $goal
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function createGoalPartnerInvite(Request $request, Goal $goal)
     {
-        if ($goal->user_id !== Auth::id()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $validated = $request->validate([
             'invitee_email' => ['required', 'string', 'email:rfc'],
             'role' => ['required', Rule::in(['cheerleader', 'drill_sergeant', 'silent'])],
@@ -59,7 +68,7 @@ class PartnerInviteController extends Controller
             ], 409);
         }
 
-        $this->expireStaleInvites($goal->id);
+        $this->expirePendingInvitesForGoal($goal->id);
 
         $pendingInviteExists = GoalPartnerInvite::query()
             ->where('goal_id', $goal->id)
@@ -72,7 +81,7 @@ class PartnerInviteController extends Controller
             ], 409);
         }
 
-        [$plainToken, $tokenHash] = $this->newTokenPair();
+        [$plainToken, $tokenHash] = $this->generateInviteTokenPair();
         $invitee = User::query()->whereRaw('LOWER(email) = ?', [$inviteeEmail])->first();
 
         $invite = GoalPartnerInvite::create([
@@ -89,14 +98,20 @@ class PartnerInviteController extends Controller
         ]);
 
         $invite->load(['inviter:id,name,email', 'goal:id,title']);
-        Mail::to($inviteeEmail)->send(new PartnerInviteMail($invite, $this->buildInviteUrl($plainToken)));
+        Mail::to($inviteeEmail)->send(new PartnerInviteMail($invite, $this->buildInviteDeepLinkUrl($plainToken)));
 
         return response()->json([
             'invite' => $invite,
         ], 201);
     }
 
-    public function resend(GoalPartnerInvite $invite)
+    /**
+     * Resend an existing pending partner invite email with a fresh token.
+     *
+     * @param GoalPartnerInvite $invite
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendGoalPartnerInviteEmail(GoalPartnerInvite $invite)
     {
         if ($invite->inviter_user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -118,7 +133,7 @@ class PartnerInviteController extends Controller
             ], 422);
         }
 
-        [$plainToken, $tokenHash] = $this->newTokenPair();
+        [$plainToken, $tokenHash] = $this->generateInviteTokenPair();
 
         $invite->update([
             'token_hash' => $tokenHash,
@@ -126,14 +141,20 @@ class PartnerInviteController extends Controller
         ]);
 
         $invite->load(['inviter:id,name,email', 'goal:id,title']);
-        Mail::to($invite->invitee_email)->send(new PartnerInviteMail($invite, $this->buildInviteUrl($plainToken)));
+        Mail::to($invite->invitee_email)->send(new PartnerInviteMail($invite, $this->buildInviteDeepLinkUrl($plainToken)));
 
         return response()->json([
             'invite' => $invite,
         ]);
     }
 
-    public function cancel(GoalPartnerInvite $invite)
+    /**
+     * Cancel a pending partner invite.
+     *
+     * @param GoalPartnerInvite $invite
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function cancelGoalPartnerInvite(GoalPartnerInvite $invite)
     {
         if ($invite->inviter_user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -155,7 +176,15 @@ class PartnerInviteController extends Controller
         ]);
     }
 
-    private function expireStaleInvites(int $goalId): void
+    /**
+     * Mark pending invites as expired when their expiry timestamp has passed.
+     * 
+     * This function is used when there is a connection so works effectively as a sync mechanism
+     *
+     * @param int $goalId
+     * @return void
+     */
+    private function expirePendingInvitesForGoal(int $goalId): void
     {
         GoalPartnerInvite::query()
             ->where('goal_id', $goalId)
@@ -167,7 +196,12 @@ class PartnerInviteController extends Controller
             ]);
     }
 
-    private function newTokenPair(): array
+    /**
+     * Generate a random plain token and its SHA-256 hash.
+     *
+     * @return array{0:string,1:string}
+     */
+    private function generateInviteTokenPair(): array
     {
         $plain = Str::random(64);
         $hash = hash('sha256', $plain);
@@ -175,7 +209,13 @@ class PartnerInviteController extends Controller
         return [$plain, $hash];
     }
 
-    private function buildInviteUrl(string $token): string
+    /**
+     * Build the deep link URL for invite acceptance.
+     *
+     * @param string $token
+     * @return string
+     */
+    private function buildInviteDeepLinkUrl(string $token): string
     {
         $base = rtrim((string) config('services.partner_invites.url_base', 'trendsetter://partner-invite'), '/');
 
