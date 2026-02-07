@@ -40,4 +40,11 @@ return [
         'base_uri' => env('OPENAI_BASE_URI', 'https://api.openai.com/v1/'),
     ],
 
+    'partner_invites' => [
+        'url_base' => env('PARTNER_INVITE_URL_BASE', 'https://app.trendsetter.com/partner-invite'),
+        'expiry_hours' => env('PARTNER_INVITE_EXPIRY_HOURS', 72),
+        'accepted_claim_days' => env('PARTNER_INVITE_ACCEPTED_CLAIM_DAYS', 7),
+        'accepted_retention_days' => env('PARTNER_INVITE_ACCEPTED_RETENTION_DAYS', 30),
+    ],
+
 ];

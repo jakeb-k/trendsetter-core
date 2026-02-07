@@ -51,9 +51,33 @@ class Goal extends Model
         return $this->hasMany(Event::class);
     }
 
+    /**
+     * A goal can have one review.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
     public function review()
     {
         return $this->hasOne(GoalReview::class);
     }
 
+    /**
+     * A goal can have one active partner relationship.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function partnership()
+    {
+        return $this->hasOne(GoalPartnership::class);
+    }
+
+    /**
+     * A goal can have many partner invites over time.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function partnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class);
+    }
 }

@@ -76,4 +76,44 @@ class User extends Authenticatable
     {
         return $this->morphMany(Image::class, 'imageable');
     }
+
+    /**
+     * A user can send many partner invites.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function sentPartnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class, 'inviter_user_id');
+    }
+
+    /**
+     * A user can receive many partner invites.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function receivedPartnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class, 'invitee_user_id');
+    }
+
+    /**
+     * A user can initiate many goal partnerships.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function initiatedPartnerships()
+    {
+        return $this->hasMany(GoalPartnership::class, 'initiator_user_id');
+    }
+
+    /**
+     * A user can be the partner in many goal partnerships.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function partnerPartnerships()
+    {
+        return $this->hasMany(GoalPartnership::class, 'partner_user_id');
+    }
 }

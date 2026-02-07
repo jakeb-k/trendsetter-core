@@ -3,7 +3,7 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GoalController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\PartnerInviteController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -26,6 +26,14 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/goals/{goal}/review', [GoalController::class, 'getGoalReview'])->name('api.goals.review.get');
 
+        Route::get('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'listGoalPartnerInvites'])->name('api.goals.partner_invites.index');
+
+        Route::post('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'createGoalPartnerInvite'])->name('api.goals.partner_invites.store');
+
+        Route::post('/partner-invites/{invite}/resend', [PartnerInviteController::class, 'resendGoalPartnerInviteEmail'])->name('api.partner_invites.resend');
+
+        Route::delete('/partner-invites/{invite}', [PartnerInviteController::class, 'cancelGoalPartnerInvite'])->name('api.partner_invites.cancel');
+
         Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
 
         Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');
@@ -34,7 +42,16 @@ Route::prefix('v1')->group(function () {
 
         Route::delete('/events/{event}/feedback', [EventController::class, 'deleteEventFeedback'])->name('api.event.feedback.delete');
     });
-        Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
+
+    Route::get('/partner-invites/resolve', [PartnerInviteController::class, 'resolveGoalPartnerInviteToken'])
+        ->middleware('throttle:partner-invite-public')
+        ->name('api.partner_invites.resolve');
+
+    Route::post('/partner-invites/respond', [PartnerInviteController::class, 'respondGoalPartnerInvite'])
+        ->middleware('throttle:partner-invite-public')
+        ->name('api.partner_invites.respond');
+
+    Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
 
     Route::post('/auth/login', [AuthenticatedSessionController::class, 'storeApi'])->name('api.login');
 });
