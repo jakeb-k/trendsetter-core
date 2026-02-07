@@ -43,6 +43,7 @@ return [
     'partner_invites' => [
         'url_base' => env('PARTNER_INVITE_URL_BASE', 'trendsetter://partner-invite'),
         'expiry_hours' => env('PARTNER_INVITE_EXPIRY_HOURS', 72),
+        'accepted_retention_days' => env('PARTNER_INVITE_ACCEPTED_RETENTION_DAYS', 30),
     ],
 
 ];

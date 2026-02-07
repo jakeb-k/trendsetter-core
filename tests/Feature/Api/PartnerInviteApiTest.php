@@ -104,6 +104,28 @@ class PartnerInviteApiTest extends TestCase
         Mail::assertNothingSent();
     }
 
+    public function test_non_owner_cannot_create_partner_invite_for_goal(): void
+    {
+        Mail::fake();
+
+        $goalOwner = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $goal = Goal::factory()->create([
+            'user_id' => $goalOwner->id,
+        ]);
+
+        Sanctum::actingAs($otherUser);
+
+        $response = $this->postJson("/api/v1/goals/{$goal->id}/partner-invites", [
+            'invitee_email' => 'buddy@example.com',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+        ]);
+
+        $response->assertForbidden();
+        Mail::assertNothingSent();
+    }
+
     public function test_owner_can_resend_pending_invite_and_new_token_is_issued(): void
     {
         Mail::fake();
@@ -168,5 +190,35 @@ class PartnerInviteApiTest extends TestCase
         $this->assertDatabaseMissing('goal_partner_invites', [
             'id' => $invite->id,
         ]);
+    }
+
+    public function test_non_owner_cannot_resend_invite_email(): void
+    {
+        Mail::fake();
+
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $goal = Goal::factory()->create([
+            'user_id' => $owner->id,
+        ]);
+
+        $invite = GoalPartnerInvite::create([
+            'goal_id' => $goal->id,
+            'inviter_user_id' => $owner->id,
+            'invitee_email' => 'buddy@example.com',
+            'status' => 'pending',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+            'token_hash' => hash('sha256', 'cannot-resend-token'),
+            'expires_at' => now()->addDay(),
+            'last_sent_at' => now()->subHour(),
+        ]);
+
+        Sanctum::actingAs($otherUser);
+
+        $response = $this->postJson("/api/v1/partner-invites/{$invite->id}/resend");
+        $response->assertForbidden();
+
+        Mail::assertNothingSent();
     }
 }

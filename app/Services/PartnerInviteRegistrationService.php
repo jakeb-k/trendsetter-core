@@ -54,6 +54,39 @@ class PartnerInviteRegistrationService
     }
 
     /**
+     * Delete stale invite history to keep the table size bounded.
+     *
+     * @param int $acceptedRetentionDays
+     * @return array{expired_or_cancelled_deleted:int,accepted_deleted:int}
+     */
+    public function pruneResolvedInvites(int $acceptedRetentionDays = 30): array
+    {
+        $acceptedCutoff = now()->subDays(max(0, $acceptedRetentionDays));
+
+        $expiredOrCancelledDeleted = GoalPartnerInvite::query()
+            ->whereIn('status', ['expired', 'cancelled'])
+            ->delete();
+
+        $acceptedDeleted = GoalPartnerInvite::query()
+            ->where('status', 'accepted')
+            ->where(function ($query) use ($acceptedCutoff) {
+                $query->where(function ($subQuery) use ($acceptedCutoff) {
+                    $subQuery->whereNotNull('responded_at')
+                        ->where('responded_at', '<=', $acceptedCutoff);
+                })->orWhere(function ($subQuery) use ($acceptedCutoff) {
+                    $subQuery->whereNull('responded_at')
+                        ->where('updated_at', '<=', $acceptedCutoff);
+                });
+            })
+            ->delete();
+
+        return [
+            'expired_or_cancelled_deleted' => $expiredOrCancelledDeleted,
+            'accepted_deleted' => $acceptedDeleted,
+        ];
+    }
+
+    /**
      * Activate an invite for a newly registered user when possible.
      *
      * @param GoalPartnerInvite $invite
