@@ -76,4 +76,24 @@ class User extends Authenticatable
     {
         return $this->morphMany(Image::class, 'imageable');
     }
+
+    public function sentPartnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class, 'inviter_user_id');
+    }
+
+    public function receivedPartnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class, 'invitee_user_id');
+    }
+
+    public function initiatedPartnerships()
+    {
+        return $this->hasMany(GoalPartnership::class, 'initiator_user_id');
+    }
+
+    public function partnerPartnerships()
+    {
+        return $this->hasMany(GoalPartnership::class, 'partner_user_id');
+    }
 }

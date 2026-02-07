@@ -56,4 +56,13 @@ class Goal extends Model
         return $this->hasOne(GoalReview::class);
     }
 
+    public function partnership()
+    {
+        return $this->hasOne(GoalPartnership::class);
+    }
+
+    public function partnerInvites()
+    {
+        return $this->hasMany(GoalPartnerInvite::class);
+    }
 }
