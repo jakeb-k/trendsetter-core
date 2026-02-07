@@ -13,7 +13,7 @@ class PartnerInviteRegistrationServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_prune_resolved_invites_deletes_expired_cancelled_and_old_accepted(): void
+    public function test_prune_resolved_invites_deletes_expired_cancelled_and_archives_old_accepted(): void
     {
         $inviter = User::factory()->create();
         $goal = Goal::factory()->create(['user_id' => $inviter->id]);
@@ -70,11 +70,15 @@ class PartnerInviteRegistrationServiceTest extends TestCase
         $result = $service->pruneResolvedInvites(30);
 
         $this->assertSame(2, $result['expired_or_cancelled_deleted']);
-        $this->assertSame(1, $result['accepted_deleted']);
+        $this->assertSame(1, $result['accepted_archived']);
 
         $this->assertDatabaseMissing('goal_partner_invites', ['id' => $expiredInvite->id]);
         $this->assertDatabaseMissing('goal_partner_invites', ['id' => $cancelledInvite->id]);
-        $this->assertDatabaseMissing('goal_partner_invites', ['id' => $oldAcceptedInvite->id]);
+        $this->assertDatabaseHas('goal_partner_invites', [
+            'id' => $oldAcceptedInvite->id,
+        ]);
+        $this->assertNotNull($oldAcceptedInvite->fresh()?->archived_at);
         $this->assertDatabaseHas('goal_partner_invites', ['id' => $recentAcceptedInvite->id]);
+        $this->assertNull($recentAcceptedInvite->fresh()?->archived_at);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Goal;
 use App\Models\GoalPartnerInvite;
 use App\Models\GoalPartnership;
 use App\Models\User;
@@ -11,28 +12,39 @@ use Illuminate\Support\Str;
 class PartnerInviteRegistrationService
 {
     /**
-     * Link and activate all pending partner invites that match a new user's email.
+     * Claim accepted partner invites for the given user.
      *
      * @param User $user
      * @return void
      */
-    public function linkPendingInvitesForNewUser(User $user): void
+    public function claimAcceptedInvitesForUser(User $user): void
     {
+        if ($user->email_verified_at === null) {
+            return;
+        }
+
         $normalizedEmail = Str::lower($user->email);
 
         DB::transaction(function () use ($user, $normalizedEmail) {
             $this->expireAllStalePendingInvites();
+            $this->expireStaleAcceptedUnclaimedInvites();
 
             $matchingInvites = GoalPartnerInvite::query()
-                ->where('status', 'pending')
-                ->where('expires_at', '>', now())
-                ->whereRaw('LOWER(invitee_email) = ?', [$normalizedEmail])
+                ->where('status', 'accepted')
+                ->whereNull('archived_at')
+                ->where(function ($query) use ($user, $normalizedEmail) {
+                    $query->where('invitee_user_id', $user->id)
+                        ->orWhere(function ($subQuery) use ($normalizedEmail) {
+                            $subQuery->whereNull('invitee_user_id')
+                                ->whereRaw('LOWER(invitee_email) = ?', [$normalizedEmail]);
+                        });
+                })
                 ->lockForUpdate()
                 ->orderBy('id')
                 ->get();
 
             foreach ($matchingInvites as $invite) {
-                $this->activateInviteForUser($invite, $user);
+                $this->claimAcceptedInviteForUser($invite, $user);
             }
         });
     }
@@ -54,10 +66,32 @@ class PartnerInviteRegistrationService
     }
 
     /**
+     * Expire accepted invites that were never claimed within the claim window.
+     *
+     * @param int|null $claimDays
+     * @return int
+     */
+    public function expireStaleAcceptedUnclaimedInvites(?int $claimDays = null): int
+    {
+        $claimWindowDays = $claimDays ?? (int) config('services.partner_invites.accepted_claim_days', 7);
+        $acceptedCutoff = now()->subDays(max(0, $claimWindowDays));
+
+        return GoalPartnerInvite::query()
+            ->where('status', 'accepted')
+            ->whereNull('archived_at')
+            ->whereDoesntHave('goal.partnership')
+            ->where('responded_at', '<=', $acceptedCutoff)
+            ->update([
+                'status' => 'expired',
+                'responded_at' => now(),
+            ]);
+    }
+
+    /**
      * Delete stale invite history to keep the table size bounded.
      *
      * @param int $acceptedRetentionDays
-     * @return array{expired_or_cancelled_deleted:int,accepted_deleted:int}
+     * @return array{expired_or_cancelled_deleted:int,accepted_archived:int}
      */
     public function pruneResolvedInvites(int $acceptedRetentionDays = 30): array
     {
@@ -67,34 +101,34 @@ class PartnerInviteRegistrationService
             ->whereIn('status', ['expired', 'cancelled'])
             ->delete();
 
-        $acceptedDeleted = GoalPartnerInvite::query()
+        $acceptedArchived = GoalPartnerInvite::query()
             ->where('status', 'accepted')
-            ->where(function ($query) use ($acceptedCutoff) {
-                $query->where(function ($subQuery) use ($acceptedCutoff) {
-                    $subQuery->whereNotNull('responded_at')
-                        ->where('responded_at', '<=', $acceptedCutoff);
-                })->orWhere(function ($subQuery) use ($acceptedCutoff) {
-                    $subQuery->whereNull('responded_at')
-                        ->where('updated_at', '<=', $acceptedCutoff);
-                });
-            })
-            ->delete();
+            ->whereNull('archived_at')
+            ->where('responded_at', '<=', $acceptedCutoff)
+            ->update([
+                'archived_at' => now(),
+            ]);
 
         return [
             'expired_or_cancelled_deleted' => $expiredOrCancelledDeleted,
-            'accepted_deleted' => $acceptedDeleted,
+            'accepted_archived' => $acceptedArchived,
         ];
     }
 
     /**
-     * Activate an invite for a newly registered user when possible.
+     * Claim an accepted invite for a verified user when possible.
      *
      * @param GoalPartnerInvite $invite
      * @param User $user
      * @return void
      */
-    private function activateInviteForUser(GoalPartnerInvite $invite, User $user): void
+    private function claimAcceptedInviteForUser(GoalPartnerInvite $invite, User $user): void
     {
+        Goal::query()
+            ->whereKey($invite->goal_id)
+            ->lockForUpdate()
+            ->first();
+
         $goalAlreadyPartnered = GoalPartnership::query()
             ->where('goal_id', $invite->goal_id)
             ->lockForUpdate()
@@ -118,7 +152,7 @@ class PartnerInviteRegistrationService
         $invite->update([
             'invitee_user_id' => $user->id,
             'status' => 'accepted',
-            'responded_at' => now(),
+            'responded_at' => $invite->responded_at ?? now(),
         ]);
 
         GoalPartnerInvite::query()
