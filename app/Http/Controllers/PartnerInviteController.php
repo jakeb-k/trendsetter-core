@@ -48,6 +48,10 @@ class PartnerInviteController extends Controller
      */
     public function createGoalPartnerInvite(Request $request, Goal $goal)
     {
+        if ($goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $validated = $request->validate([
             'invitee_email' => ['required', 'string', 'email:rfc'],
             'role' => ['required', Rule::in(['cheerleader', 'drill_sergeant', 'silent'])],
@@ -113,6 +117,10 @@ class PartnerInviteController extends Controller
      */
     public function resendGoalPartnerInviteEmail(GoalPartnerInvite $invite)
     {
+        if ($invite->inviter_user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if ($invite->status !== 'pending') {
             return response()->json([
                 'message' => 'Only pending invites can be resent.',
