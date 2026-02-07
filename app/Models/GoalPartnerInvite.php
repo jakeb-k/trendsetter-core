@@ -15,6 +15,7 @@ class GoalPartnerInvite extends Model
     protected function casts(): array
     {
         return [
+            'archived_at' => 'datetime',
             'expires_at' => 'datetime',
             'last_sent_at' => 'datetime',
             'responded_at' => 'datetime',

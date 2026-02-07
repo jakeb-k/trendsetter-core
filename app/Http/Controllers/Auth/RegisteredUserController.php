@@ -43,7 +43,7 @@ class RegisteredUserController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        $partnerInviteRegistrationService->linkPendingInvitesForNewUser($user);
+        $partnerInviteRegistrationService->claimAcceptedInvitesForUser($user);
 
         event(new Registered($user));
 

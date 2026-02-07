@@ -4,7 +4,6 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\PartnerInviteController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -43,7 +42,16 @@ Route::prefix('v1')->group(function () {
 
         Route::delete('/events/{event}/feedback', [EventController::class, 'deleteEventFeedback'])->name('api.event.feedback.delete');
     });
-        Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
+
+    Route::get('/partner-invites/resolve', [PartnerInviteController::class, 'resolveGoalPartnerInviteToken'])
+        ->middleware('throttle:partner-invite-public')
+        ->name('api.partner_invites.resolve');
+
+    Route::post('/partner-invites/respond', [PartnerInviteController::class, 'respondGoalPartnerInvite'])
+        ->middleware('throttle:partner-invite-public')
+        ->name('api.partner_invites.respond');
+
+    Route::get('/goals', [GoalController::class, 'getGoals'])->name('api.goals.get');
 
     Route::post('/auth/login', [AuthenticatedSessionController::class, 'storeApi'])->name('api.login');
 });
