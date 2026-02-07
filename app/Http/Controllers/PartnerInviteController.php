@@ -113,10 +113,6 @@ class PartnerInviteController extends Controller
      */
     public function resendGoalPartnerInviteEmail(GoalPartnerInvite $invite)
     {
-        if ($invite->inviter_user_id !== Auth::id()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         if ($invite->status !== 'pending') {
             return response()->json([
                 'message' => 'Only pending invites can be resent.',
@@ -149,10 +145,10 @@ class PartnerInviteController extends Controller
     }
 
     /**
-     * Cancel a pending partner invite.
+     * Delete a pending partner invite.
      *
      * @param GoalPartnerInvite $invite
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function cancelGoalPartnerInvite(GoalPartnerInvite $invite)
     {
@@ -166,14 +162,9 @@ class PartnerInviteController extends Controller
             ], 422);
         }
 
-        $invite->update([
-            'status' => 'cancelled',
-            'responded_at' => now(),
-        ]);
+        $invite->delete();
 
-        return response()->json([
-            'invite' => $invite,
-        ]);
+        return response()->noContent();
     }
 
     /**

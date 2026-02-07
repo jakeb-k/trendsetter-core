@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\PartnerInviteController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,14 @@ Route::prefix('v1')->group(function () {
         Route::post('/goals/{goal}/review', [GoalController::class, 'createGoalReview'])->name('api.goals.review.store');
 
         Route::get('/goals/{goal}/review', [GoalController::class, 'getGoalReview'])->name('api.goals.review.get');
+
+        Route::get('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'listGoalPartnerInvites'])->name('api.goals.partner_invites.index');
+
+        Route::post('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'createGoalPartnerInvite'])->name('api.goals.partner_invites.store');
+
+        Route::post('/partner-invites/{invite}/resend', [PartnerInviteController::class, 'resendGoalPartnerInviteEmail'])->name('api.partner_invites.resend');
+
+        Route::delete('/partner-invites/{invite}', [PartnerInviteController::class, 'cancelGoalPartnerInvite'])->name('api.partner_invites.cancel');
 
         Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
 
