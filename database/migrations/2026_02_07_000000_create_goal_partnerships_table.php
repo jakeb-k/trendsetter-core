@@ -18,6 +18,7 @@ return new class extends Migration
             $table->foreignId('partner_user_id')->constrained('users')->onDelete('cascade');
             $table->enum('status', ['active', 'paused'])->default('active');
             $table->enum('role', ['cheerleader', 'drill_sergeant', 'silent'])->default('cheerleader');
+            $table->boolean('notify_on_alerts')->default(true);
             $table->timestamp('paused_at')->nullable();
             $table->timestamps();
 
