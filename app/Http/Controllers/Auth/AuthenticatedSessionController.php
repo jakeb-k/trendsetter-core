@@ -48,7 +48,6 @@ class AuthenticatedSessionController extends Controller
      */
     public function storeApi(LoginRequest $request, PartnerInviteRegistrationService $partnerInviteRegistrationService)
     {
-        \Log::info('API Login Attempt');
         $request->authenticate();
 
         $user = $request->user();
