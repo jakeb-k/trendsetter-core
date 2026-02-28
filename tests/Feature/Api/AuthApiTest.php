@@ -70,7 +70,7 @@ class AuthApiTest extends TestCase
             'invitee_email' => 'existing-partner@example.com',
             'status' => 'accepted',
             'role' => 'silent',
-            'notify_on_alerts' => true,
+            'notify_on_alerts' => false,
             'token_hash' => hash('sha256', 'existing-user-token'),
             'expires_at' => now()->addDay(),
             'responded_at' => now()->subMinute(),
@@ -90,6 +90,7 @@ class AuthApiTest extends TestCase
             'partner_user_id' => $user->id,
             'status' => 'active',
             'role' => 'silent',
+            'notify_on_alerts' => 0,
         ]);
     }
 

@@ -107,6 +107,18 @@ class GoalApiTest extends TestCase
         $this->assertNull($response->json('feedback.Stretch'));
     }
 
+    public function test_non_owner_cannot_get_goal_event_feedback(): void
+    {
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+        Sanctum::actingAs($otherUser);
+
+        $goal = Goal::factory()->create(['user_id' => $owner->id]);
+
+        $response = $this->getJson("/api/v1/goals/{$goal->id}/feedback");
+        $response->assertForbidden();
+    }
+
     public function test_complete_goal_updates_status_and_reason(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-01-31 10:00:00'));
