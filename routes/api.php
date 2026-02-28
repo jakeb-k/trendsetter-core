@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\GoalPartnershipController;
 use App\Http\Controllers\PartnerInviteController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,13 +35,21 @@ Route::prefix('v1')->group(function () {
 
         Route::delete('/partner-invites/{invite}', [PartnerInviteController::class, 'cancelGoalPartnerInvite'])->name('api.partner_invites.cancel');
 
+        Route::get('/partnerships', [GoalPartnershipController::class, 'listGoalPartnerships'])->name('api.partnerships.index');
+
+        Route::get('/partnerships/{partnership}/snapshot', [GoalPartnershipController::class, 'showGoalPartnershipSnapshot'])->name('api.partnerships.snapshot');
+
+        Route::patch('/partnerships/{partnership}', [GoalPartnershipController::class, 'updateGoalPartnership'])->name('api.partnerships.update');
+
+        Route::post('/partnerships/{partnership}/pause', [GoalPartnershipController::class, 'pauseGoalPartnershipAlerts'])->name('api.partnerships.pause');
+
+        Route::post('/partnerships/{partnership}/unpause', [GoalPartnershipController::class, 'unpauseGoalPartnershipAlerts'])->name('api.partnerships.unpause');
+
+        Route::delete('/partnerships/{partnership}', [GoalPartnershipController::class, 'unlinkGoalPartnership'])->name('api.partnerships.unlink');
+
         Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
 
         Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback'])->name('api.event.feedback.store');
-
-        Route::put('/events/{event}/feedback', [EventController::class, 'updateEventFeedback'])->name('api.event.feedback.update');
-
-        Route::delete('/events/{event}/feedback', [EventController::class, 'deleteEventFeedback'])->name('api.event.feedback.delete');
     });
 
     Route::get('/partner-invites/resolve', [PartnerInviteController::class, 'resolveGoalPartnerInviteToken'])

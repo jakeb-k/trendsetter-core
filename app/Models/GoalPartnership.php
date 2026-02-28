@@ -14,6 +14,7 @@ class GoalPartnership extends Model
     protected function casts(): array
     {
         return [
+            'notify_on_alerts' => 'boolean',
             'paused_at' => 'datetime',
         ];
     }
