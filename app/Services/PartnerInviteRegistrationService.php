@@ -146,6 +146,7 @@ class PartnerInviteRegistrationService
             'partner_user_id' => $user->id,
             'status' => 'active',
             'role' => $invite->role,
+            'notify_on_alerts' => $invite->notify_on_alerts,
             'paused_at' => null,
         ]);
 
