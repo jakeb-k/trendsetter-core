@@ -6,7 +6,6 @@ use App\Models\Event;
 use App\Models\EventFeedback;
 use App\Models\Goal;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -15,6 +14,10 @@ class EventController extends Controller
 {
     public function getEventFeedback(Event $event)
     {
+        if ($event->goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         //@todo Implement logic that gets the current streak count
         return [
             'feedback' => $event->feedback()->orderBy('created_at', 'desc')->get(),
@@ -40,6 +43,10 @@ class EventController extends Controller
         ]);
 
         $goal = Goal::find($request->goal_id);
+        if ($goal && $goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if ($goal && $goal->status === 'completed') {
             return response()->json([
                 'message' => 'Cannot add events to a completed goal.',
@@ -75,6 +82,10 @@ class EventController extends Controller
      */
     public function storeEventFeedback(Request $request, Event $event)
     {
+        if ($event->goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'note' => 'required|string|max:255',
             'status' => 'required|in:completed,skipped,partial,struggled,nailed_it',
