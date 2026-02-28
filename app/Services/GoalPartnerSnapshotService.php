@@ -45,12 +45,13 @@ class GoalPartnerSnapshotService
             ->orderBy('created_at')
             ->get(['event_id', 'status', 'created_at']);
 
+        // Get array of all logged feedback for the current goal and return in date => true array 
+        // E.g. [{eventID}|{date} => true]
         $loggedFeedbackLookup = $this->buildFeedbackLookup($feedback);
         $successfulFeedbackLookup = $this->buildFeedbackLookup($feedback, self::SUCCESS_STATUSES);
 
-        $lastLogAt = $feedback->max('created_at');
-        $lastLogAtCarbon = $lastLogAt ? CarbonImmutable::parse($lastLogAt) : null;
-        $inactivityDays = $lastLogAtCarbon ? $lastLogAtCarbon->startOfDay()->diffInDays($today) : null;
+        $lastLogAt = $feedback->max('created_at') ? CarbonImmutable::parse($feedback->max('created_at')) : null;
+        $inactivityDays = $lastLogAt ? $lastLogAt->startOfDay()->diffInDays($today) : null;
 
         $scheduledOccurrencesToDate = $this->buildScheduledOccurrences($events, $goalStartDate, $today);
 
@@ -85,7 +86,7 @@ class GoalPartnerSnapshotService
 
         return [
             'streak_length' => $streakLength,
-            'last_log_at' => $lastLogAtCarbon?->toIso8601String(),
+            'last_log_at' => $lastLogAt?->toIso8601String(),
             'inactivity_days' => $inactivityDays,
             'weekly_consistency_percent' => $weeklyConsistency,
             'rolling_consistency_percent' => $rollingWindow['consistency_percent'],

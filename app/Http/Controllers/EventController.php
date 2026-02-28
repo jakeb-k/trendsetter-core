@@ -35,7 +35,7 @@ class EventController extends Controller
         $request->validate([
             'goal_id' => 'required|numeric|exists:goals,id',
             'title' => 'required|string|max:50',
-            'description' => 'nullable|string|max:255',
+            'description' => 'required|string|max:255',
             'frequency' => ['required', Rule::in(['weekly', 'monthly'])],
             'times_per_week' => 'required|numeric|gt:0|max:7',
             'duration_in_weeks' => 'required|numeric|gt:0',
