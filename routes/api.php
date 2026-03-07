@@ -5,6 +5,7 @@ use App\Http\Controllers\EventController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\GoalPartnershipController;
 use App\Http\Controllers\PartnerInviteController;
+use App\Http\Controllers\PartnerNotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -27,7 +28,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/goals/{goal}/review', [GoalController::class, 'getGoalReview'])->name('api.goals.review.get');
 
-        Route::get('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'listGoalPartnerInvites'])->name('api.goals.partner_invites.index');
+        Route::get('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'listGoalPartnerInvites'])->name('api.goals.partner_invites.get');
 
         Route::post('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'createGoalPartnerInvite'])->name('api.goals.partner_invites.store');
 
@@ -35,7 +36,7 @@ Route::prefix('v1')->group(function () {
 
         Route::delete('/partner-invites/{invite}', [PartnerInviteController::class, 'cancelGoalPartnerInvite'])->name('api.partner_invites.cancel');
 
-        Route::get('/partnerships', [GoalPartnershipController::class, 'listGoalPartnerships'])->name('api.partnerships.index');
+        Route::get('/partnerships', [GoalPartnershipController::class, 'listGoalPartnerships'])->name('api.partnerships.get');
 
         Route::get('/partnerships/{partnership}/snapshot', [GoalPartnershipController::class, 'showGoalPartnershipSnapshot'])->name('api.partnerships.snapshot');
 
@@ -46,6 +47,18 @@ Route::prefix('v1')->group(function () {
         Route::post('/partnerships/{partnership}/unpause', [GoalPartnershipController::class, 'unpauseGoalPartnershipAlerts'])->name('api.partnerships.unpause');
 
         Route::delete('/partnerships/{partnership}', [GoalPartnershipController::class, 'unlinkGoalPartnership'])->name('api.partnerships.unlink');
+
+        Route::get('/partner-notifications', [PartnerNotificationController::class, 'index'])->name('api.partner_notifications.get');
+
+        Route::get('/partner-notifications/unread-count', [PartnerNotificationController::class, 'unreadCount'])->name('api.partner_notifications.unread_count');
+
+        Route::post('/partner-notifications/{notificationId}/read', [PartnerNotificationController::class, 'markRead'])->name('api.partner_notifications.read');
+
+        Route::post('/partner-notifications/read-all', [PartnerNotificationController::class, 'markAllRead'])->name('api.partner_notifications.read_all');
+
+        Route::delete('/partner-notifications/clear-read', [PartnerNotificationController::class, 'clearRead'])->name('api.partner_notifications.clear_read');
+
+        Route::post('/partner-notifications/{notificationId}/encouragement', [PartnerNotificationController::class, 'sendEncouragement'])->name('api.partner_notifications.encouragement');
 
         Route::post('/events', [EventController::class, 'storeEvent'])->name('api.events.store');
 
