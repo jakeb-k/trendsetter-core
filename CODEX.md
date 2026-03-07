@@ -1,522 +1,396 @@
-# Trendsetter-Core - Laravel API
-
-## Project Overview
-
-Trendsetter-Core is the Laravel backend API for the Trendsetter goal-tracking application. It provides RESTful endpoints for authentication, goal management, event scheduling, feedback tracking, and AI-powered planning.
-
-## Tech Stack
-
-- **Framework**: Laravel 12.0
-- **PHP Version**: 8.2+
-- **Database**: SQLite (configurable)
-- **Authentication**: Laravel Sanctum (token-based)
-- **AI Integration**: OpenAI GPT-4o via openai-php/client
-- **Frontend**: Inertia.js with React (admin dashboard)
-
-## Project Structure
-
-```
-trendsetter-core/
-├── app/
-│   ├── Http/
-│   │   ├── Controllers/
-│   │   │   ├── Auth/              # Authentication controllers
-│   │   │   ├── Settings/          # User settings controllers
-│   │   │   ├── GoalController.php # Goals & AI planning
-│   │   │   └── EventController.php# Events & feedback
-│   │   ├── Middleware/
-│   │   │   ├── HandleInertiaRequests.php
-│   │   │   └── HandleAppearance.php
-│   │   └── Requests/
-│   │       └── Auth/              # Form requests
-│   ├── Models/
-│   │   ├── User.php
-│   │   ├── Goal.php
-│   │   ├── AiPlan.php
-│   │   ├── Event.php
-│   │   ├── EventFeedback.php
-│   │   └── Image.php
-│   ├── Services/
-│   │   ├── AiPlanGenerator.php    # OpenAI integration
-│   │   └── EventGenerator.php     # Event creation from AI
-│   └── Providers/
-├── routes/
-│   ├── api.php                    # API routes (v1)
-│   ├── web.php                    # Web routes
-│   ├── auth.php                   # Auth routes
-│   └── settings.php               # Settings routes
-├── database/
-│   ├── migrations/
-│   ├── factories/
-│   └── seeders/
-├── config/
-└── resources/
-    └── js/                        # React frontend (Inertia)
-```
-
-## Database Schema
-
-### Models & Relationships
-
-```
-User
-├── hasMany Goals
-├── hasMany EventFeedback
-└── morphMany Images
-
-Goal
-├── belongsTo User
-├── hasMany AiPlans
-└── hasMany Events
-
-AiPlan
-├── belongsTo Goal
-└── hasMany Events
-
-Event
-├── belongsTo Goal
-├── belongsTo AiPlan
-└── hasMany EventFeedback (as 'feedback')
-
-EventFeedback
-├── belongsTo User
-├── belongsTo Event
-└── morphMany Images
-
-Image
-└── morphTo imageable (User, EventFeedback)
-```
-
-### Key Tables
-
-**goals**
-- id, user_id, title, description, category, status, start_date, end_date, timestamps
-- Status enum: `active`, `completed`, `abandoned`, `paused`, `stalled`, `needs_review`
-
-**events**
-- id, ai_plan_id, goal_id, title, description, repeat (json), scheduled_for, completed_at, points, timestamps
-
-**event_feedback**
-- id, event_id, user_id, note, status, mood, timestamps
-- Status enum: `completed`, `skipped`, `partial`, `struggled`, `nailed_it`
-- Mood: `happy`, `meh`, `good`, `frustrated`
-
-## Conventions
-
-### Controller Pattern
-
-```php
-<?php
-
-namespace App\Http\Controllers;
-
-use App\Models\Goal;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-
-class GoalController extends Controller
-{
-    public function index(Request $request): JsonResponse
-    {
-        $goals = $request->user()->goals()->with('events')->get();
-
-        return response()->json([
-            'goals' => $goals,
-        ]);
-    }
-
-    public function store(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'title' => 'required|string|max:50',
-            'description' => 'required|string|max:255',
-            'end_date' => 'required|date|after:today',
-        ]);
-
-        $goal = $request->user()->goals()->create([
-            'title' => $validated['title'],
-            'description' => $validated['description'],
-            'end_date' => $validated['end_date'],
-            'start_date' => now(),
-            'status' => 'active',
-            'category' => 'User Created',
-        ]);
-
-        return response()->json(['goal' => $goal], 201);
-    }
-}
-```
-
-### Model Pattern
-
-```php
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-
-class Goal extends Model
-{
-    protected $guarded = ['id'];
-
-    protected $casts = [
-        'start_date' => 'date',
-        'end_date' => 'date',
-    ];
-
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function events(): HasMany
-    {
-        return $this->hasMany(Event::class);
-    }
-
-    public function aiPlans(): HasMany
-    {
-        return $this->hasMany(AiPlan::class);
-    }
-}
-```
-
-### Service Pattern
-
-```php
-<?php
-
-namespace App\Services;
-
-use App\Models\Goal;
-use App\Models\AiPlan;
-use OpenAI\Laravel\Facades\OpenAI;
-
-class AiPlanGenerator
-{
-    public function generatePlan(string $goalDescription, array $context = []): array
-    {
-        $response = OpenAI::chat()->create([
-            'model' => 'gpt-4o',
-            'messages' => $this->buildMessages($goalDescription, $context),
-        ]);
-
-        return json_decode($response->choices[0]->message->content, true);
-    }
-
-    public function storePlanAndGoal(array $aiResponse, array $context): array
-    {
-        $goal = Goal::create([
-            'user_id' => auth()->id(),
-            'title' => $aiResponse['goal']['title'],
-            'description' => $aiResponse['goal']['description'],
-            'category' => $aiResponse['goal']['category'],
-            'start_date' => now(),
-            'end_date' => $aiResponse['goal']['end_date'],
-            'status' => 'active',
-        ]);
-
-        $aiPlan = AiPlan::create([
-            'goal_id' => $goal->id,
-            'version' => 1,
-            'prompt_log' => $context,
-        ]);
-
-        return ['goal' => $goal, 'ai_plan' => $aiPlan];
-    }
-}
-```
-
-### Migration Pattern
-
-```php
-<?php
-
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-
-return new class extends Migration
-{
-    public function up(): void
-    {
-        Schema::create('goals', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('title');
-            $table->text('description');
-            $table->string('category');
-            $table->enum('status', ['active', 'completed', 'abandoned', 'paused', 'stalled', 'needs_review']);
-            $table->date('start_date');
-            $table->date('end_date');
-            $table->timestamps();
-        });
-    }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('goals');
-    }
-};
-```
-
-### Form Request Pattern
-
-```php
-<?php
-
-namespace App\Http\Requests;
-
-use Illuminate\Foundation\Http\FormRequest;
-
-class StoreGoalRequest extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return [
-            'title' => 'required|string|max:50',
-            'description' => 'required|string|max:255',
-            'end_date' => 'required|date|after:today',
-        ];
-    }
-}
-```
-
-## API Routes
-
-All API routes are prefixed with `/api/v1`.
-
-### Public Routes
-
-```php
-Route::post('/auth/login', [AuthenticatedSessionController::class, 'storeApi']);
-```
-
-### Protected Routes (auth:sanctum)
-
-```php
-// Goals
-Route::get('/goals', [GoalController::class, 'getGoals']);
-Route::post('/goals', [GoalController::class, 'storeGoal']);
-Route::get('/goals/{goal}/feedback', [GoalController::class, 'getGoalEventFeedback']);
-
-// Events
-Route::post('/events', [EventController::class, 'storeEvent']);
-Route::get('/events/{event}/feedback', [EventController::class, 'getEventFeedback']);
-Route::post('/events/{event}/feedback', [EventController::class, 'storeEventFeedback']);
-Route::put('/events/{event}/feedback', [EventController::class, 'updateEventFeedback']);
-Route::delete('/events/{event}/feedback', [EventController::class, 'deleteEventFeedback']);
-
-// AI Planning
-Route::post('/ai-plan/chat', [GoalController::class, 'generatePlan']);
-```
-
-## Authentication
-
-### Sanctum Token Authentication
-
-```php
-// Login response (AuthenticatedSessionController@storeApi)
-public function storeApi(LoginRequest $request): JsonResponse
-{
-    $request->authenticate();
-
-    $user = Auth::user();
-    $token = $user->createToken('auth_token')->plainTextToken;
-
-    return response()->json([
-        'user' => $user,
-        'goals' => $user->goals()->with('events')->get(),
-        'token' => $token,
-    ]);
-}
-```
-
-### Protecting Routes
-
-```php
-// In routes/api.php
-Route::middleware('auth:sanctum')->group(function () {
-    // Protected routes here
-});
-```
-
-## Event Repeat Structure
-
-Events can have recurring schedules stored as JSON:
-
-```php
-// In Event model
-protected $casts = [
-    'repeat' => 'json',
-];
-
-// Repeat structure
-[
-    'frequency' => 'weekly',        // daily, weekly, monthly
-    'times_per_week' => 3,          // optional
-    'duration_in_weeks' => 16,      // how long the event repeats
-]
-```
-
-## AI Integration
-
-### OpenAI Configuration
-
-```php
-// config/services.php
-'openai' => [
-    'api_key' => env('OPENAI_API_KEY'),
-],
-```
-
-### AI Response Structure
-
-```php
-// Expected AI response for plan generation
-[
-    'finished' => true,
-    'message' => 'Your plan is ready!',
-    'goal' => [
-        'title' => 'Learn Spanish',
-        'description' => '...',
-        'category' => 'Learning',
-        'end_date' => '2025-06-01',
-    ],
-    'events' => [
-        [
-            'title' => 'Daily vocabulary practice',
-            'description' => '...',
-            'due_date' => '2025-01-15',
-            'repeat' => [
-                'frequency' => 'daily',
-                'duration_in_weeks' => 16,
-            ],
-        ],
-    ],
-]
-```
-
-## Adding New Features
-
-### New Migration
-
-```bash
-php artisan make:migration create_table_name_table
-```
-
-### New Model
-
-```bash
-php artisan make:model ModelName
-```
-
-Place in `app/Models/`, add relationships, casts, and guarded/fillable.
-
-### New Controller
-
-```bash
-php artisan make:controller ControllerName
-```
-
-Place in `app/Http/Controllers/`. For API controllers, return `JsonResponse`.
-
-### New Service
-
-1. Create in `app/Services/`
-2. Inject via constructor or use dependency injection
-3. Register in `AppServiceProvider` if needed
-
-### New API Route
-
-1. Add to `routes/api.php`
-2. Use `Route::middleware('auth:sanctum')` for protected routes
-3. Group related routes together
-
-### New Form Request
-
-```bash
-php artisan make:request RequestName
-```
-
-Place in `app/Http/Requests/`.
-
-## Testing
-
-```bash
-# Run all tests
-php artisan test
-
-# Run specific test file
-php artisan test tests/Feature/GoalTest.php
-```
-
-## Common Commands
-
-```bash
-# Migrations
-php artisan migrate
-php artisan migrate:fresh --seed
-
-# Cache
-php artisan config:clear
-php artisan cache:clear
-php artisan route:clear
-
-# Tinker
-php artisan tinker
-
-# Queue
-php artisan queue:listen
-
-# Code formatting
-./vendor/bin/pint
-```
-
-## Environment Variables
-
-Key `.env` variables:
-
-```env
-APP_NAME=TrendsetterCore
-APP_URL=https://trendsetter-core.test
-
-DB_CONNECTION=sqlite
-
-SANCTUM_STATEFUL_DOMAINS=localhost:3000,127.0.0.1:8000,localhost:8081
-
-OPENAI_API_KEY=sk-proj-...
-
-SESSION_DRIVER=database
-QUEUE_CONNECTION=database
-CACHE_STORE=database
-```
-
-## Error Handling
-
-Return consistent JSON error responses:
-
-```php
-return response()->json([
-    'message' => 'Validation failed',
-    'errors' => $validator->errors(),
-], 422);
-
-return response()->json([
-    'message' => 'Resource not found',
-], 404);
-```
-
-## Git Workflow
-
-- **Main branch**: `main`
-- Follow Laravel conventions for commits
-- Run `./vendor/bin/pint` before committing
+# CODEX.md
+
+## Purpose
+
+This repository exists to build and maintain a backend that is boring, trustworthy, testable, and easy to evolve.
+
+The goal is not to produce the most clever code.
+The goal is to produce software that behaves correctly under real usage, is easy to reason about, and does not collapse under iteration.
+
+This document defines the operating rules for AI-assisted development in this repository.
+
+---
+
+## Core philosophy
+
+Prefer clarity over cleverness, explicitness over magic, simple flows over flexible abstractions, correctness over speed, maintainability over theoretical elegance.
+
+Every change should make the system easier to trust.
+
+The backend is the source of truth for business rules, permissions, state transitions, and derived outcomes that matter to users.
+
+Do not treat this codebase like a playground for patterns, abstractions, or premature generalisation.
+
+---
+
+## What good looks like
+
+Good code in this repository is:
+
+- easy to read
+- easy to test
+- hard to misuse
+- explicit about business rules
+- conservative with state
+- small in surface area
+- consistent with existing conventions
+- resilient to edge cases
+- honest about uncertainty
+
+A change is not good because it is large, abstract, or “future-proof”.
+A change is good if another engineer can understand it quickly and trust its behaviour.
+
+---
+
+## Non-negotiable engineering rules
+
+### 1. Business rules live in the backend
+
+Anything involving permissions, eligibility, derived state, notifications, ownership, progression, or user trust must be enforced server-side.
+
+Never rely on client behaviour for correctness.
+
+### 2. One source of truth per concept
+
+If a rule or calculation already exists, reuse or extract it.
+Do not introduce parallel implementations of the same logic.
+
+If two parts of the system need the same concept, they must share the same rule path.
+
+### 3. State machines must be intentional
+
+If a feature has lifecycle states, those states must be explicit and minimal.
+
+Do not invent extra states unless they represent a real business distinction.
+Do not leave transitions ambiguous.
+Do not allow illegal transitions “because the UI won’t do that”.
+
+If a state exists, define:
+- what it means
+- how it is entered
+- how it is exited
+- what actions are allowed while in it
+
+### 4. Optimise for deletion, not expansion
+
+Prefer designs that are easy to remove, simplify, or reshape later.
+
+Do not add configuration, columns, toggles, services, or abstractions “just in case”.
+Build only what the current product rules require.
+
+### 5. Privacy and trust are product features
+
+Any feature that crosses user boundaries must default to minimal exposure.
+
+Never expose private user content unless explicitly required and approved.
+Signals are safer than raw data.
+Summaries are safer than histories.
+Derived outcomes are safer than source material.
+
+When in doubt, suppress rather than leak.
+
+### 6. False positives are often worse than false negatives
+
+For anything user-facing that could damage trust, social features especially, bias toward suppression over premature action.
+
+If the system is uncertain, it should do less, not more.
+
+### 7. Prefer boring data models
+
+Schemas should reflect real domain needs, not imagined future complexity.
+
+Avoid bloated tables, duplicated ownership fields, speculative metadata, and fields with unclear responsibility.
+
+Every persisted field should have a reason to exist.
+
+### 8. No silent rule drift
+
+If a new feature depends on an existing concept, do not reimplement it slightly differently.
+
+This repository must not accumulate multiple subtly different definitions of:
+- progress
+- completion
+- streaks
+- misses
+- eligibility
+- ownership
+- notification conditions
+- pace
+- access
+
+### 9. Permissions are not UI concerns
+
+If something should be forbidden, enforce it in backend policy, service, or domain logic.
+Never assume a hidden button is protection.
+
+### 10. Idempotency matters
+
+Any action that can be retried, repeated, refreshed, or raced must be safe under repetition.
+
+Assume:
+- requests may be duplicated
+- users may tap twice
+- jobs may retry
+- multiple processes may evaluate the same thing
+
+The backend must remain correct under those conditions.
+
+---
+
+## AI workflow rules
+
+### 11. Multi-agent workflow is mandatory for meaningful work
+
+Do not use a single-agent “write everything” workflow for non-trivial changes.
+
+Meaningful features must use a multi-agent workflow with distinct responsibilities, such as:
+- requirements / intent validation
+- implementation
+- test generation
+- review / criticism
+- security / permission review
+- refactor / simplification review
+
+The exact agent names do not matter.
+The separation of concerns does.
+
+One agent should not be trusted to define, implement, and approve the same behaviour without challenge.
+
+### 12. AI must not be used as an authority
+
+AI output is a draft, not truth.
+
+Treat generated code, tests, migrations, and architecture suggestions as proposals that must be interrogated.
+
+Never accept code because it looks polished.
+Never accept tests because they are numerous.
+Never accept abstractions because they sound reusable.
+
+### 13. Human judgement decides product boundaries
+
+AI may help implement, review, and refine.
+It must not decide the actual product rules.
+
+Product intent, trust boundaries, lifecycle rules, privacy posture, and simplification choices must come from deliberate judgement, not generator drift.
+
+### 14. Specification before implementation
+
+For any medium or large feature:
+- define the product rules first
+- define constraints second
+- define acceptance criteria third
+- implement last
+
+Do not start from code and work backwards into behaviour.
+
+### 15. Generated tests are not enough on their own
+
+AI-generated tests are useful, but they do not replace adversarial thinking.
+
+For important behaviour, also verify:
+- auth boundaries
+- state transition legality
+- duplicate requests
+- race conditions
+- stale data behaviour
+- edge cases that are socially or financially costly
+
+### 16. The simpler implementation wins
+
+If two implementations satisfy the same product rules, choose the one with:
+- fewer moving parts
+- fewer states
+- fewer persisted fields
+- fewer jobs
+- fewer opportunities for drift
+
+Cleverness is not a virtue here.
+
+---
+
+## Design and architecture standards
+
+### 17. Keep layers honest
+
+Controllers should coordinate, not contain business logic.
+Domain or application logic should own decisions.
+Persistence should support the model, not define it.
+Background jobs should execute workflows, not invent rules.
+
+Do not let logic leak into random places just because it is convenient.
+
+### 18. Shared logic must be extracted when it becomes load-bearing
+
+If a rule is used in more than one meaningful place and divergence would be dangerous, extract it.
+
+Extraction should reduce ambiguity, not create a fake abstraction hierarchy.
+
+### 19. Prefer direct naming
+
+Names should describe purpose plainly.
+
+Avoid dramatic, over-generic, or pattern-heavy names.
+A reader should know what something does without decoding it.
+
+### 20. Keep side effects visible
+
+A function, service, or workflow that mutates state, sends notifications, or creates linked records should make that obvious.
+
+Do not hide meaningful behaviour behind vague helper names.
+
+### 21. Background processing must remain deterministic
+
+Queued or scheduled work must follow the same business rules as synchronous flows.
+
+No background path may invent alternate logic because it is “close enough”.
+
+### 22. Observability is required for risky automation
+
+If the system automatically creates, suppresses, expires, rate-limits, or deduplicates user-facing outcomes, there must be enough observability to debug why.
+
+But observability must remain privacy-safe and retention-conscious.
+
+---
+
+## Testing standards
+
+### 23. Test behaviour, not implementation trivia
+
+Tests should prove product rules, permissions, and invariants.
+They should not overfit internal method structure.
+
+A good test answers:
+- what must happen
+- what must never happen
+- under what conditions
+
+### 24. Every meaningful feature needs negative tests
+
+Happy paths are not enough.
+
+If a feature can be abused, repeated, raced, expired, muted, duplicated, paused, unlinked, or forbidden, those cases should be tested.
+
+### 25. Test the invariants that matter most
+
+Prioritise tests around:
+- ownership
+- access control
+- lifecycle transitions
+- deduplication
+- rate limiting
+- suppression
+- data leakage prevention
+- idempotency
+
+### 26. High test count does not equal high confidence
+
+A small set of sharp tests is better than a mountain of shallow ones.
+
+Do not generate filler tests for the sake of volume.
+
+---
+
+## Data and schema standards
+
+### 27. Persist only what the product actually needs
+
+Before adding a field, ask:
+- is this a real product concept
+- is it required for correctness
+- is it required for performance
+- is it required for observability
+- could it be derived instead
+
+If the answer is no, do not store it.
+
+### 28. Avoid speculative schema design
+
+Do not add columns, flags, JSON blobs, or relationship hooks for hypothetical future features.
+
+Future requirements should earn future schema.
+
+### 29. Retention matters
+
+Not all data should live forever.
+
+Logs, observability, notifications, and derived history should each have intentional retention decisions.
+Do not keep noisy internal records forever without a reason.
+
+---
+
+## Product alignment rules
+
+### 30. The app is about follow-through, not decoration
+
+Backend features should support action, consistency, accountability, and trust.
+
+Do not spend complexity budget on features that do not improve:
+- user follow-through
+- clarity of progress
+- accountability reliability
+- trust in the system
+
+### 31. Social features must stay intimate and low-noise
+
+This product is not a feed, not a leaderboard, not public performance theatre.
+
+Any backend support for social/accountability features should reinforce:
+- 1:1 trust
+- supportive nudges
+- low spam
+- low exposure
+- reversible relationships
+
+### 32. Neutral wording and non-shaming logic matter
+
+When the backend supports notifications, messaging, or user-visible states, the system must avoid punitive framing.
+
+The product should encourage recovery, not humiliation.
+
+---
+
+## Change management rules
+
+### 33. Do not widen scope mid-implementation
+
+If a feature reveals adjacent possibilities, note them, do not silently include them.
+
+Stay inside the agreed phase or acceptance criteria unless explicitly changed.
+
+### 34. Preserve existing behaviour unless intentionally changing it
+
+When refactoring or extracting logic, preserve behaviour exactly unless the product rule is intentionally being changed.
+
+### 35. If a change increases complexity, it must earn it
+
+Extra jobs, services, states, records, or flows are acceptable only if they solve a real problem that cannot be solved more simply.
+
+---
+
+## Review checklist
+
+Before finalising any meaningful change, ask:
+
+- Is the product behaviour explicit
+- Is the backend the source of truth
+- Is there exactly one load-bearing rule path for each core concept
+- Are permissions enforced server-side
+- Are states minimal and transitions legal
+- Is the data model lean
+- Are retries and duplicates safe
+- Are social/privacy risks suppressed rather than leaked
+- Are the tests proving invariants, not implementation noise
+- Is this the simplest thing that satisfies the actual requirement
+
+If the answer to any of these is no, the change is not done.
+
+---
+
+## Final standard
+
+This repository should feel disciplined, calm, and unsurprising.
+
+We are not trying to impress with architecture.
+We are trying to build a backend that keeps its promises.
+
+Anything that makes the codebase noisier, more magical, more abstract, more speculative, or harder to trust is the wrong direction.
