@@ -80,4 +80,15 @@ class Goal extends Model
     {
         return $this->hasMany(GoalPartnerInvite::class);
     }
+
+    /**
+     * A goal can record many partnership alert evaluations.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function partnershipAlertEvents()
+    {
+        return $this->hasMany(GoalPartnershipAlertEvent::class);
+    }
+
 }

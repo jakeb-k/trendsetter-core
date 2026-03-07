@@ -368,8 +368,8 @@ Suggested columns:
 - `goal_id`
 - `subject_user_id`
 - `recipient_user_id`
-- `trigger_source`
-- `primary_alert_type` nullable
+- `evaluation_source`
+- `selected_alert_type` nullable
 - `candidate_types` JSON nullable
 - `outcome`
 - `reason_codes` JSON nullable
@@ -392,7 +392,7 @@ Suggested `outcome` values:
 - `suppressed_goal_completed`
 - `suppressed_no_partnership`
 
-Suggested `trigger_source` values:
+Suggested `evaluation_source` values:
 
 - `log_submit`
 - `scheduled_scan`
