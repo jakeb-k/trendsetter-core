@@ -5,10 +5,13 @@ namespace Tests\Feature\Api;
 use App\Models\Event;
 use App\Models\EventFeedback;
 use App\Models\Goal;
+use App\Models\GoalPartnership;
 use App\Models\User;
+use App\Services\GoalPartnershipAlertEvaluator;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Tests\TestCase;
 
 class EventApiTest extends TestCase
@@ -108,7 +111,11 @@ class EventApiTest extends TestCase
             'mood' => 'happy',
         ]);
 
-        $response->assertCreated();
+        $response
+            ->assertCreated()
+            ->assertJsonPath('feedback.note', 'Felt great.')
+            ->assertJsonPath('partner_alert.attempted', false)
+            ->assertJsonPath('partner_alert.status', 'not_applicable');
         $this->assertSame(1, EventFeedback::where('event_id', $event->id)->where('user_id', $user->id)->count());
 
         $response = $this->postJson("/api/v1/events/{$event->id}/feedback", [
@@ -117,7 +124,11 @@ class EventApiTest extends TestCase
             'mood' => 'happy',
         ]);
 
-        $response->assertOk();
+        $response
+            ->assertOk()
+            ->assertJsonPath('feedback.note', 'Updated note.')
+            ->assertJsonPath('partner_alert.attempted', false)
+            ->assertJsonPath('partner_alert.status', 'not_applicable');
         $this->assertSame(1, EventFeedback::where('event_id', $event->id)->where('user_id', $user->id)->count());
         $this->assertSame('Updated note.', EventFeedback::first()->note);
 
@@ -204,5 +215,48 @@ class EventApiTest extends TestCase
 
         $response = $this->getJson("/api/v1/events/{$event->id}/feedback");
         $response->assertForbidden();
+    }
+
+    public function test_store_event_feedback_relays_partner_alert_failure_when_evaluation_throws(): void
+    {
+        $owner = User::factory()->create();
+        $partner = User::factory()->create();
+        Sanctum::actingAs($owner);
+
+        $goal = Goal::factory()->create(['user_id' => $owner->id]);
+        $event = Event::factory()->create(['goal_id' => $goal->id]);
+        GoalPartnership::create([
+            'goal_id' => $goal->id,
+            'initiator_user_id' => $owner->id,
+            'partner_user_id' => $partner->id,
+            'status' => 'active',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+            'paused_at' => null,
+        ]);
+
+        $mock = Mockery::mock(GoalPartnershipAlertEvaluator::class);
+        $mock->shouldReceive('evaluate')
+            ->once()
+            ->andThrow(new \RuntimeException('This partnership is no longer available.'));
+        $this->app->instance(GoalPartnershipAlertEvaluator::class, $mock);
+
+        $response = $this->postJson("/api/v1/events/{$event->id}/feedback", [
+            'note' => 'Still saved',
+            'status' => 'completed',
+            'mood' => 'good',
+        ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('feedback.note', 'Still saved')
+            ->assertJsonPath('partner_alert.attempted', true)
+            ->assertJsonPath('partner_alert.status', 'failed')
+            ->assertJsonPath('partner_alert.outcome', 'failed');
+
+        $this->assertStringContainsString(
+            'no longer active',
+            strtolower((string) $response->json('partner_alert.message'))
+        );
     }
 }

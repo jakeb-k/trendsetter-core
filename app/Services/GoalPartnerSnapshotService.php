@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use App\Models\Event;
-use App\Models\EventFeedback;
-use App\Models\Goal;
 use App\Models\GoalPartnership;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -14,6 +12,11 @@ class GoalPartnerSnapshotService
     private const SUCCESS_STATUSES = ['completed', 'partial', 'struggled', 'nailed_it'];
     private const PACE_TOLERANCE = 0.5;
     private const MOMENTUM_THRESHOLD = 5.0;
+
+    public function __construct(
+        private readonly GoalOccurrenceService $goalOccurrenceService
+    ) {
+    }
 
     /**
      * Build a safe, signals-only snapshot for a partnered goal.
@@ -25,35 +28,29 @@ class GoalPartnerSnapshotService
     {
         $partnership->loadMissing('goal.events');
 
-        /** @var Goal $goal */
         $goal = $partnership->goal;
         $events = $goal->events;
         $ownerUserId = $goal->user_id;
 
         $now = CarbonImmutable::now();
         $today = $now->startOfDay();
-        $goalStartDate = $this->resolveGoalStartDate($goal, $today);
+        $goalStartDate = $this->goalOccurrenceService->resolveGoalStartDate($goal, $today);
 
         if ($events->isEmpty()) {
             return $this->buildEmptySnapshot($goalStartDate, $today);
         }
 
-        $eventIds = $events->pluck('id')->all();
-        $feedback = EventFeedback::query()
-            ->whereIn('event_id', $eventIds)
-            ->where('user_id', $ownerUserId)
-            ->orderBy('created_at')
-            ->get(['event_id', 'status', 'created_at']);
+        $feedback = $this->goalOccurrenceService->loadFeedbackRowsForEvents($events, (int) $ownerUserId);
 
         // Get array of all logged feedback for the current goal and return in date => true array 
         // E.g. [{eventID}|{date} => true]
-        $loggedFeedbackLookup = $this->buildFeedbackLookup($feedback);
-        $successfulFeedbackLookup = $this->buildFeedbackLookup($feedback, self::SUCCESS_STATUSES);
+        $loggedFeedbackLookup = $this->goalOccurrenceService->buildFeedbackLookup($feedback);
+        $successfulFeedbackLookup = $this->goalOccurrenceService->buildFeedbackLookup($feedback, self::SUCCESS_STATUSES);
 
         $lastLogAt = $feedback->max('created_at') ? CarbonImmutable::parse($feedback->max('created_at')) : null;
         $inactivityDays = $lastLogAt ? $lastLogAt->startOfDay()->diffInDays($today) : null;
 
-        $scheduledOccurrencesToDate = $this->buildScheduledOccurrences($events, $goalStartDate, $today);
+        $scheduledOccurrencesToDate = $this->goalOccurrenceService->buildScheduledOccurrences($events, $goalStartDate, $today);
 
         $streakLength = $this->calculateStreakLength($scheduledOccurrencesToDate, $loggedFeedbackLookup, $today);
         $weeklyWindow = $this->buildWindowMetrics($events, $loggedFeedbackLookup, $today->subDays(6), $today);
@@ -65,7 +62,10 @@ class GoalPartnerSnapshotService
         });
 
         $pointsEarned = round((float) $scheduledOccurrencesToDate->sum(function (array $occurrence) use ($pointsByEventId, $successfulFeedbackLookup): float {
-            $lookupKey = $this->buildFeedbackLookupKey($occurrence['event_id'], $occurrence['at']->toDateString());
+            $lookupKey = $this->goalOccurrenceService->buildFeedbackLookupKey(
+                $occurrence['event_id'],
+                $occurrence['at']->toDateString()
+            );
 
             return isset($successfulFeedbackLookup[$lookupKey])
                 ? (float) ($pointsByEventId[$occurrence['event_id']] ?? 1.0)
@@ -76,7 +76,11 @@ class GoalPartnerSnapshotService
         $paceDelta = round($pointsEarned - $pointsExpectedByToday, 2);
         $paceStatus = $this->determinePaceStatus($paceDelta);
 
-        $nextScheduledOccurrence = $this->resolveNextScheduledOccurrence($events, $now, $loggedFeedbackLookup);
+        $nextScheduledOccurrence = $this->goalOccurrenceService->resolveNextScheduledOccurrence(
+            $events,
+            $now,
+            $loggedFeedbackLookup
+        );
 
         $weeklyConsistency = $weeklyWindow['consistency_percent'];
         $previousWeeklyConsistency = $previousWeekWindow['consistency_percent'];
@@ -99,6 +103,56 @@ class GoalPartnerSnapshotService
             'momentum_trend' => $this->determineMomentumTrend($momentumDelta),
             'momentum_delta_percent' => $momentumDelta,
         ];
+    }
+
+    /**
+     * Build the normalized snapshot payload stored on alert events.
+     *
+     * @param array<string,mixed> $snapshot
+     * @param int $consecutiveMissCount
+     * @return array<string,mixed>
+     */
+    public function buildSnapshotExcerpt(array $snapshot, int $consecutiveMissCount): array
+    {
+        return [
+            'streak_length' => (int) ($snapshot['streak_length'] ?? 0),
+            'last_log_at' => $snapshot['last_log_at'] ?? null,
+            'inactivity_days' => (int) ($snapshot['inactivity_days'] ?? 0),
+            'weekly_consistency_percent' => (float) ($snapshot['weekly_consistency_percent'] ?? 0),
+            'rolling_consistency_percent' => (float) ($snapshot['rolling_consistency_percent'] ?? 0),
+            'points_earned' => (float) ($snapshot['points_earned'] ?? 0),
+            'points_expected_by_today' => (float) ($snapshot['points_expected_by_today'] ?? 0),
+            'pace_status' => $snapshot['pace_status'] ?? null,
+            'pace_delta' => (float) ($snapshot['pace_delta'] ?? 0),
+            'next_scheduled_event_at' => $snapshot['next_scheduled_event_at'] ?? null,
+            'next_scheduled_event_label' => $snapshot['next_scheduled_event_label'] ?? null,
+            'momentum_trend' => $snapshot['momentum_trend'] ?? null,
+            'momentum_delta_percent' => (float) ($snapshot['momentum_delta_percent'] ?? 0),
+            'consecutive_misses' => $consecutiveMissCount,
+        ];
+    }
+
+    /**
+     * Resolve the inactivity threshold-crossing date used for alert dedupe keys.
+     *
+     * @param array<string,mixed> $snapshot
+     * @param CarbonImmutable $goalStartDate
+     * @param int $thresholdDays
+     * @return string
+     */
+    public function resolveInactivityBoundaryDate(
+        array $snapshot,
+        CarbonImmutable $goalStartDate,
+        int $thresholdDays
+    ): string {
+        $days = max(0, $thresholdDays);
+        $referenceDate = $snapshot['last_log_at'] ?? null;
+
+        if ($referenceDate !== null) {
+            return CarbonImmutable::parse($referenceDate)->startOfDay()->addDays($days)->toDateString();
+        }
+
+        return $goalStartDate->addDays($days)->toDateString();
     }
 
     /**
@@ -128,22 +182,6 @@ class GoalPartnerSnapshotService
     }
 
     /**
-     * Resolve the start date used for expected-value calculations.
-     *
-     * @param Goal $goal
-     * @param CarbonImmutable $today
-     * @return CarbonImmutable
-     */
-    private function resolveGoalStartDate(Goal $goal, CarbonImmutable $today): CarbonImmutable
-    {
-        if ($goal->start_date !== null) {
-            return CarbonImmutable::parse($goal->start_date)->startOfDay();
-        }
-
-        return CarbonImmutable::parse($goal->created_at ?? $today)->startOfDay();
-    }
-
-    /**
      * Calculate the current streak across scheduled occurrences with submitted logs.
      *
      * @param Collection<int,array{event_id:int,at:CarbonImmutable,label:string}> $scheduledOccurrences
@@ -164,7 +202,7 @@ class GoalPartnerSnapshotService
             return $occurrence['at']->getTimestamp();
         }) as $occurrence) {
             $occurrenceDate = $occurrence['at']->toDateString();
-            $lookupKey = $this->buildFeedbackLookupKey($occurrence['event_id'], $occurrenceDate);
+            $lookupKey = $this->goalOccurrenceService->buildFeedbackLookupKey($occurrence['event_id'], $occurrenceDate);
 
             if ($occurrenceDate === $todayDateString && !isset($loggedFeedbackLookup[$lookupKey])) {
                 continue;
@@ -203,9 +241,12 @@ class GoalPartnerSnapshotService
             ];
         }
 
-        $scheduledOccurrences = $this->buildScheduledOccurrences($events, $from, $to);
+        $scheduledOccurrences = $this->goalOccurrenceService->buildScheduledOccurrences($events, $from, $to);
         $completed = (float) $scheduledOccurrences->filter(function (array $occurrence) use ($loggedFeedbackLookup): bool {
-            $lookupKey = $this->buildFeedbackLookupKey($occurrence['event_id'], $occurrence['at']->toDateString());
+            $lookupKey = $this->goalOccurrenceService->buildFeedbackLookupKey(
+                $occurrence['event_id'],
+                $occurrence['at']->toDateString()
+            );
 
             return isset($loggedFeedbackLookup[$lookupKey]);
         })->count();
@@ -247,7 +288,7 @@ class GoalPartnerSnapshotService
      */
     private function calculateExpectedOccurrencesForEvent(Event $event, CarbonImmutable $from, CarbonImmutable $to): float
     {
-        return (float) $this->buildScheduledOccurrencesForEvent($event, $from, $to)->count();
+        return (float) $this->goalOccurrenceService->buildScheduledOccurrencesForEvent($event, $from, $to)->count();
     }
 
     /**
@@ -291,261 +332,4 @@ class GoalPartnerSnapshotService
         return $momentumDelta > 0 ? 'up' : 'down';
     }
 
-    /**
-     * Build an event/date lookup table from feedback rows.
-     *
-     * @param Collection<int,EventFeedback> $feedback
-     * @param array<int,string>|null $statuses
-     * @return array<string,bool>
-     */
-    private function buildFeedbackLookup(Collection $feedback, ?array $statuses = null): array
-    {
-        return $feedback
-            ->filter(function (EventFeedback $entry) use ($statuses): bool {
-                return $statuses === null || in_array($entry->status, $statuses, true);
-            })
-            ->mapWithKeys(function (EventFeedback $entry): array {
-                return [
-                    $this->buildFeedbackLookupKey(
-                        (int) $entry->event_id,
-                        CarbonImmutable::parse($entry->created_at)->toDateString()
-                    ) => true,
-                ];
-            })
-            ->all();
-    }
-
-    /**
-     * Build scheduled occurrences across a collection of events for a date window.
-     *
-     * @param Collection<int,Event> $events
-     * @param CarbonImmutable $from
-     * @param CarbonImmutable $to
-     * @return Collection<int,array{event_id:int,at:CarbonImmutable,label:string}>
-     */
-    private function buildScheduledOccurrences(Collection $events, CarbonImmutable $from, CarbonImmutable $to): Collection
-    {
-        return $events
-            ->flatMap(function (Event $event) use ($from, $to): Collection {
-                return $this->buildScheduledOccurrencesForEvent($event, $from, $to);
-            })
-            ->values();
-    }
-
-    /**
-     * Build the scheduled occurrence dates for a single event in a date window.
-     *
-     * @param Event $event
-     * @param CarbonImmutable $from
-     * @param CarbonImmutable $to
-     * @return Collection<int,array{event_id:int,at:CarbonImmutable,label:string}>
-     */
-    private function buildScheduledOccurrencesForEvent(Event $event, CarbonImmutable $from, CarbonImmutable $to): Collection
-    {
-        $eventStart = CarbonImmutable::parse($event->scheduled_for)->startOfDay();
-        $eventEnd = $this->resolveEventEndDate($event);
-
-        $windowStart = $from->greaterThan($eventStart) ? $from->startOfDay() : $eventStart;
-        $windowEnd = $to->lessThan($eventEnd) ? $to->startOfDay() : $eventEnd;
-
-        if ($windowStart->greaterThan($windowEnd)) {
-            return collect();
-        }
-
-        $label = $event->title;
-        $frequency = (string) data_get($event->repeat, 'frequency', '');
-
-        if ($frequency === '' || $event->repeat === null) {
-            return collect([[
-                'event_id' => (int) $event->id,
-                'at' => $eventStart,
-                'label' => $label,
-            ]])->filter(function (array $occurrence) use ($windowStart, $windowEnd): bool {
-                return $occurrence['at']->greaterThanOrEqualTo($windowStart)
-                    && $occurrence['at']->lessThanOrEqualTo($windowEnd);
-            })->values();
-        }
-
-        return match ($frequency) {
-            'daily' => $this->buildDailyOccurrences($event, $windowStart, $windowEnd),
-            'monthly' => $this->buildMonthlyOccurrences($event, $windowStart, $windowEnd),
-            default => $this->buildWeeklyOccurrences($event, $windowStart, $windowEnd),
-        };
-    }
-
-    /**
-     * Build daily scheduled occurrences for an event.
-     *
-     * @param Event $event
-     * @param CarbonImmutable $windowStart
-     * @param CarbonImmutable $windowEnd
-     * @return Collection<int,array{event_id:int,at:CarbonImmutable,label:string}>
-     */
-    private function buildDailyOccurrences(Event $event, CarbonImmutable $windowStart, CarbonImmutable $windowEnd): Collection
-    {
-        $eventStart = CarbonImmutable::parse($event->scheduled_for)->startOfDay();
-        $cursor = $windowStart->greaterThan($eventStart) ? $windowStart : $eventStart;
-        $occurrences = collect();
-
-        while ($cursor->lessThanOrEqualTo($windowEnd)) {
-            $occurrences->push([
-                'event_id' => (int) $event->id,
-                'at' => $cursor,
-                'label' => $event->title,
-            ]);
-
-            $cursor = $cursor->addDay();
-        }
-
-        return $occurrences;
-    }
-
-    /**
-     * Build weekly scheduled occurrences for an event.
-     *
-     * @param Event $event
-     * @param CarbonImmutable $windowStart
-     * @param CarbonImmutable $windowEnd
-     * @return Collection<int,array{event_id:int,at:CarbonImmutable,label:string}>
-     */
-    private function buildWeeklyOccurrences(Event $event, CarbonImmutable $windowStart, CarbonImmutable $windowEnd): Collection
-    {
-        $eventStart = CarbonImmutable::parse($event->scheduled_for)->startOfDay();
-        $eventEnd = $this->resolveEventEndDate($event);
-        $timesPerWeek = max(1, min(7, (int) data_get($event->repeat, 'times_per_week', 1)));
-        $weekOffsets = $this->buildWeeklyOccurrenceOffsets($timesPerWeek);
-        $weekCursor = $eventStart;
-        $occurrences = collect();
-
-        while ($weekCursor->lessThanOrEqualTo($eventEnd)) {
-            foreach ($weekOffsets as $offsetDays) {
-                $occurrenceAt = $weekCursor->addDays($offsetDays);
-
-                if ($occurrenceAt->greaterThan($eventEnd)) {
-                    break;
-                }
-
-                if ($occurrenceAt->lessThan($windowStart) || $occurrenceAt->greaterThan($windowEnd)) {
-                    continue;
-                }
-
-                $occurrences->push([
-                    'event_id' => (int) $event->id,
-                    'at' => $occurrenceAt,
-                    'label' => $event->title,
-                ]);
-            }
-
-            $weekCursor = $weekCursor->addWeek();
-        }
-
-        return $occurrences;
-    }
-
-    /**
-     * Build monthly scheduled occurrences for an event.
-     *
-     * @param Event $event
-     * @param CarbonImmutable $windowStart
-     * @param CarbonImmutable $windowEnd
-     * @return Collection<int,array{event_id:int,at:CarbonImmutable,label:string}>
-     */
-    private function buildMonthlyOccurrences(Event $event, CarbonImmutable $windowStart, CarbonImmutable $windowEnd): Collection
-    {
-        $eventStart = CarbonImmutable::parse($event->scheduled_for)->startOfDay();
-        $eventEnd = $this->resolveEventEndDate($event);
-        $cursor = $eventStart;
-        $occurrences = collect();
-
-        while ($cursor->lessThanOrEqualTo($eventEnd)) {
-            if ($cursor->greaterThanOrEqualTo($windowStart) && $cursor->lessThanOrEqualTo($windowEnd)) {
-                $occurrences->push([
-                    'event_id' => (int) $event->id,
-                    'at' => $cursor,
-                    'label' => $event->title,
-                ]);
-            }
-
-            $cursor = $cursor->addMonthNoOverflow()->startOfDay();
-        }
-
-        return $occurrences;
-    }
-
-    /**
-     * Determine the next scheduled occurrence that still matters to the user today.
-     *
-     * @param Collection<int,Event> $events
-     * @param CarbonImmutable $now
-     * @param array<string,bool> $loggedFeedbackLookup
-     * @return array{at:CarbonImmutable|null,label:string|null}
-     */
-    private function resolveNextScheduledOccurrence(
-        Collection $events,
-        CarbonImmutable $now,
-        array $loggedFeedbackLookup
-    ): array {
-        $today = $now->startOfDay();
-        $nextOccurrence = $events
-            ->flatMap(function (Event $event) use ($today): Collection {
-                return $this->buildScheduledOccurrencesForEvent($event, $today, $this->resolveEventEndDate($event));
-            })
-            ->sortBy(function (array $occurrence): int {
-                return $occurrence['at']->getTimestamp();
-            })
-            ->first(function (array $occurrence) use ($loggedFeedbackLookup, $today): bool {
-                $occurrenceDate = $occurrence['at']->toDateString();
-                $lookupKey = $this->buildFeedbackLookupKey($occurrence['event_id'], $occurrenceDate);
-
-                return $occurrenceDate !== $today->toDateString() || !isset($loggedFeedbackLookup[$lookupKey]);
-            });
-
-        return [
-            'at' => $nextOccurrence['at'] ?? null,
-            'label' => $nextOccurrence['label'] ?? null,
-        ];
-    }
-
-    /**
-     * Resolve the last date an event should generate scheduled occurrences.
-     *
-     * @param Event $event
-     * @return CarbonImmutable
-     */
-    private function resolveEventEndDate(Event $event): CarbonImmutable
-    {
-        $eventStart = CarbonImmutable::parse($event->scheduled_for)->startOfDay();
-        $durationWeeks = max(1, (int) data_get($event->repeat, 'duration_in_weeks', 1));
-
-        return $eventStart->addWeeks($durationWeeks)->subDay();
-    }
-
-    /**
-     * Build evenly distributed offsets for weekly recurring events.
-     *
-     * @param int $timesPerWeek
-     * @return array<int,int>
-     */
-    private function buildWeeklyOccurrenceOffsets(int $timesPerWeek): array
-    {
-        $offsets = [];
-
-        for ($index = 0; $index < $timesPerWeek; $index++) {
-            $offsets[] = (int) floor(($index * 7) / $timesPerWeek);
-        }
-
-        return array_values(array_unique($offsets));
-    }
-
-    /**
-     * Build the lookup key used to match scheduled occurrences against feedback.
-     *
-     * @param int $eventId
-     * @param string $date
-     * @return string
-     */
-    private function buildFeedbackLookupKey(int $eventId, string $date): string
-    {
-        return $eventId.'|'.$date;
-    }
 }

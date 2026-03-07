@@ -5,9 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use App\Models\EventFeedback;
 use App\Models\Goal;
+use App\Models\GoalPartnershipAlertEvent;
+use App\Services\GoalPartnershipAlertEvaluator;
+use App\Services\PartnershipAlertEvaluationSource;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class EventController extends Controller
@@ -78,9 +82,14 @@ class EventController extends Controller
      *
      * @param Request $request
      * @param Event $event
+     * @param GoalPartnershipAlertEvaluator $goalPartnershipAlertEvaluator
      * @return JsonResponse
      */
-    public function storeEventFeedback(Request $request, Event $event)
+    public function storeEventFeedback(
+        Request $request,
+        Event $event,
+        GoalPartnershipAlertEvaluator $goalPartnershipAlertEvaluator
+    )
     {
         if ($event->goal->user_id !== Auth::id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -113,6 +122,87 @@ class EventController extends Controller
             $statusCode = 201;
         }
 
-        return response()->json($eventFeedback, $statusCode);
+        $partnership = $event->goal->partnership;
+        $partnerAlert = [
+            'attempted' => false,
+            'status' => 'not_applicable',
+            'message' => null,
+            'outcome' => null,
+        ];
+
+        if ($partnership) {
+            $partnerAlert['attempted'] = true;
+
+            try {
+                $alertEvent = $goalPartnershipAlertEvaluator->evaluate(
+                    $partnership,
+                    PartnershipAlertEvaluationSource::LogSubmit
+                );
+
+                $partnerAlert = $this->buildPartnerAlertPayload($alertEvent);
+            } catch (\RuntimeException $exception) {
+                rescue(function () use ($exception): void {
+                    report($exception);
+                }, report: false);
+                $partnerAlert = [
+                    'attempted' => true,
+                    'status' => 'failed',
+                    'message' => Str::contains(strtolower($exception->getMessage()), 'no longer available')
+                        ? 'Feedback saved, but your partnership is no longer active, so your partner was not alerted.'
+                        : 'Feedback saved, but there was an issue alerting your partner.',
+                    'outcome' => 'failed',
+                ];
+            } catch (\Throwable $exception) {
+                rescue(function () use ($exception): void {
+                    report($exception);
+                }, report: false);
+                $partnerAlert = [
+                    'attempted' => true,
+                    'status' => 'failed',
+                    'message' => 'Feedback saved, but there was an issue alerting your partner.',
+                    'outcome' => 'failed',
+                ];
+            }
+        }
+
+        return response()->json([
+            'feedback' => $eventFeedback,
+            'partner_alert' => $partnerAlert,
+        ], $statusCode);
+    }
+
+    /**
+     * Build a frontend-friendly alerting status payload from evaluator outcomes.
+     *
+     * @param GoalPartnershipAlertEvent $alertEvent
+     * @return array{attempted:bool,status:string,message:string|null,outcome:string}
+     */
+    private function buildPartnerAlertPayload(GoalPartnershipAlertEvent $alertEvent): array
+    {
+        $outcome = (string) $alertEvent->outcome;
+
+        if ($outcome === 'generated') {
+            return [
+                'attempted' => true,
+                'status' => 'queued',
+                'message' => null,
+                'outcome' => $outcome,
+            ];
+        }
+
+        $message = match ($outcome) {
+            'suppressed_notify_disabled' => 'Feedback saved. Partner alerts are turned off for this partnership.',
+            'suppressed_paused' => 'Feedback saved. Partnership alerts are currently paused.',
+            'suppressed_rate_limited' => 'Feedback saved. Your partner was recently alerted, so another alert was not sent yet.',
+            'suppressed_duplicate' => 'Feedback saved. This alert was already sent earlier.',
+            default => 'Feedback saved. No partner alert was sent for this update.',
+        };
+
+        return [
+            'attempted' => true,
+            'status' => 'suppressed',
+            'message' => $message,
+            'outcome' => $outcome,
+        ];
     }
 }
