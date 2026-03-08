@@ -18,6 +18,7 @@ class PartnerEncouragementNotification extends Notification implements ShouldQue
     public function __construct(
         private readonly array $payload
     ) {
+        $this->afterCommit();
     }
 
     /**

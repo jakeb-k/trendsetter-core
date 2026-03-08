@@ -13,7 +13,9 @@ use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class PartnerNotificationController extends Controller
 {
@@ -194,23 +196,49 @@ class PartnerNotificationController extends Controller
             ], 422);
         }
 
-        if ($this->hasEncouragementAlreadyBeenSent($notification, $alertEvent->subjectUser)) {
+        try {
+            $encouragementNotificationId = DB::transaction(function () use (
+                $notification,
+                $alertEvent,
+                $goalPartnershipNotificationService,
+                $partnership,
+                $validated,
+                $sender
+            ): string {
+                $lockedNotification = Auth::user()
+                    ->notifications()
+                    ->whereIn('type', $this->partnerNotificationTypes())
+                    ->whereKey($notification->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$lockedNotification) {
+                    throw new HttpException(404, 'Not found');
+                }
+
+                if ($this->hasEncouragementAlreadyBeenSent($lockedNotification, $alertEvent->subjectUser)) {
+                    throw new HttpException(422, 'An encouragement has already been sent for this alert.');
+                }
+
+                $encouragementNotificationId = $goalPartnershipNotificationService->sendPartnerEncouragement(
+                    $partnership,
+                    $lockedNotification->id,
+                    $validated['preset_key'],
+                    $alertEvent->subjectUser,
+                    $sender
+                );
+
+                $updatedData = $lockedNotification->data;
+                data_set($updatedData, 'encouragement.already_sent', true);
+                $lockedNotification->forceFill(['data' => $updatedData])->save();
+
+                return $encouragementNotificationId;
+            });
+        } catch (HttpException $httpException) {
             return response()->json([
-                'message' => 'An encouragement has already been sent for this alert.',
-            ], 422);
+                'message' => $httpException->getMessage(),
+            ], $httpException->getStatusCode());
         }
-
-        $encouragementNotificationId = $goalPartnershipNotificationService->sendPartnerEncouragement(
-            $partnership,
-            $notification->id,
-            $validated['preset_key'],
-            $alertEvent->subjectUser,
-            $sender
-        );
-
-        $updatedData = $notification->data;
-        data_set($updatedData, 'encouragement.already_sent', true);
-        $notification->forceFill(['data' => $updatedData])->save();
 
         return response()->json([
             'encouragement' => [

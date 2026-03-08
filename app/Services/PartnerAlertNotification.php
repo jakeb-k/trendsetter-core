@@ -18,6 +18,7 @@ class PartnerAlertNotification extends Notification implements ShouldQueue
     public function __construct(
         private readonly array $payload
     ) {
+        $this->afterCommit();
     }
 
     /**
