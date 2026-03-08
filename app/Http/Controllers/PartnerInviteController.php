@@ -68,8 +68,10 @@ class PartnerInviteController extends Controller
                 'message' => 'You cannot invite yourself as a partner.',
             ], 422);
         }
+
         try {
-            $payload = DB::transaction(function () use ($goal, $inviteeEmail, $validated) {
+            /** @var GoalPartnerInvite $invite */
+            $invite = DB::transaction(function () use ($goal, $inviteeEmail, $validated): GoalPartnerInvite {
                 Goal::query()
                     ->whereKey($goal->id)
                     ->lockForUpdate()
@@ -123,23 +125,20 @@ class PartnerInviteController extends Controller
                     'last_sent_at' => now(),
                 ]);
 
-                return [
-                    'invite' => $invite,
-                    'plain_token' => $plainToken,
-                ];
+                $invite->load(['inviter:id,name,email', 'goal:id,title']);
+                Mail::to($inviteeEmail)->send(new PartnerInviteMail($invite, $this->buildInviteUrl($plainToken)));
+
+                return $invite;
             });
         } catch (HttpException $httpException) {
             return response()->json([
                 'message' => $httpException->getMessage(),
             ], $httpException->getStatusCode());
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->inviteEmailSendFailedResponse();
         }
-
-        /** @var GoalPartnerInvite $invite */
-        $invite = $payload['invite'];
-        $plainToken = $payload['plain_token'];
-
-        $invite->load(['inviter:id,name,email', 'goal:id,title']);
-        Mail::to($inviteeEmail)->send(new PartnerInviteMail($invite, $this->buildInviteUrl($plainToken)));
 
         return response()->json([
             'invite' => $invite,
@@ -158,32 +157,77 @@ class PartnerInviteController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($invite->status !== 'pending') {
+        $resendCooldownSeconds = max(0, (int) config('services.partner_invites.resend_cooldown_seconds', 60));
+        $initialRetryAfterSeconds = $this->remainingResendCooldownSeconds($invite, $resendCooldownSeconds);
+        if ($initialRetryAfterSeconds > 0) {
             return response()->json([
-                'message' => 'Only pending invites can be resent.',
-            ], 422);
+                'message' => $this->resendCooldownMessage($initialRetryAfterSeconds),
+                'retry_after_seconds' => $initialRetryAfterSeconds,
+            ], 429, ['Retry-After' => (string) $initialRetryAfterSeconds]);
         }
 
-        if ($invite->hasExpired()) {
-            $invite->update([
-                'status' => 'expired',
-                'responded_at' => now(),
-            ]);
+        try {
+            /** @var GoalPartnerInvite $invite */
+            $invite = DB::transaction(function () use ($invite, $resendCooldownSeconds): GoalPartnerInvite {
+                $lockedInvite = GoalPartnerInvite::query()
+                    ->whereKey($invite->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            return response()->json([
-                'message' => 'Invite is expired. Create a new invite instead.',
-            ], 422);
+                if (!$lockedInvite || $lockedInvite->inviter_user_id !== Auth::id()) {
+                    throw new HttpException(403, 'Unauthorized');
+                }
+
+                if ($lockedInvite->status !== 'pending') {
+                    throw new HttpException(422, 'Only pending invites can be resent.');
+                }
+
+                if ($lockedInvite->hasExpired()) {
+                    $lockedInvite->update([
+                        'status' => 'expired',
+                        'responded_at' => now(),
+                    ]);
+
+                    throw new HttpException(422, 'Invite is expired. Create a new invite instead.');
+                }
+
+                $retryAfterSeconds = $this->remainingResendCooldownSeconds($lockedInvite, $resendCooldownSeconds);
+                if ($retryAfterSeconds > 0) {
+                    throw new HttpException(
+                        429,
+                        $this->resendCooldownMessage($retryAfterSeconds),
+                        null,
+                        ['Retry-After' => (string) $retryAfterSeconds]
+                    );
+                }
+
+                [$plainToken, $tokenHash] = $this->generateInviteTokenPair();
+                $lockedInvite->load(['inviter:id,name,email', 'goal:id,title']);
+
+                Mail::to($lockedInvite->invitee_email)->send(new PartnerInviteMail($lockedInvite, $this->buildInviteUrl($plainToken)));
+
+                $lockedInvite->update([
+                    'token_hash' => $tokenHash,
+                    'last_sent_at' => now(),
+                ]);
+
+                return $lockedInvite->fresh()->load(['inviter:id,name,email', 'goal:id,title']);
+            });
+        } catch (HttpException $httpException) {
+            $response = [
+                'message' => $httpException->getMessage(),
+            ];
+
+            if ($httpException->getStatusCode() === 429) {
+                $response['retry_after_seconds'] = max(1, (int) ($httpException->getHeaders()['Retry-After'] ?? 1));
+            }
+
+            return response()->json($response, $httpException->getStatusCode(), $httpException->getHeaders());
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->inviteEmailSendFailedResponse();
         }
-
-        [$plainToken, $tokenHash] = $this->generateInviteTokenPair();
-
-        $invite->update([
-            'token_hash' => $tokenHash,
-            'last_sent_at' => now(),
-        ]);
-
-        $invite->load(['inviter:id,name,email', 'goal:id,title']);
-        Mail::to($invite->invitee_email)->send(new PartnerInviteMail($invite, $this->buildInviteUrl($plainToken)));
 
         return response()->json([
             'invite' => $invite,
@@ -389,6 +433,43 @@ class PartnerInviteController extends Controller
                 'status' => 'expired',
                 'responded_at' => now(),
             ]);
+    }
+
+    /**
+     * Return seconds left before invite resend is allowed again.
+     *
+     * @param GoalPartnerInvite $invite
+     * @param int $cooldownSeconds
+     * @return int
+     */
+    private function remainingResendCooldownSeconds(GoalPartnerInvite $invite, int $cooldownSeconds): int
+    {
+        if ($cooldownSeconds <= 0 || !$invite->last_sent_at) {
+            return 0;
+        }
+
+        $nextAllowedAt = $invite->last_sent_at->copy()->addSeconds($cooldownSeconds);
+
+        return max(0, $nextAllowedAt->getTimestamp() - now()->getTimestamp());
+    }
+
+    /**
+     * @param int $retryAfterSeconds
+     * @return string
+     */
+    private function resendCooldownMessage(int $retryAfterSeconds): string
+    {
+        return "Please wait {$retryAfterSeconds} second(s) before resending this invite.";
+    }
+
+    /**
+     * @return \Illuminate\Http\JsonResponse
+     */
+    private function inviteEmailSendFailedResponse()
+    {
+        return response()->json([
+            'message' => 'Unable to send invite email right now. Please try again.',
+        ], 503);
     }
 
     /**

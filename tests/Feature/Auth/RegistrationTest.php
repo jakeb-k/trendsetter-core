@@ -83,7 +83,7 @@ class RegistrationTest extends TestCase
             'invitee_email' => 'new-partner@example.com',
             'status' => 'accepted',
             'role' => 'drill_sergeant',
-            'notify_on_alerts' => true,
+            'notify_on_alerts' => false,
             'token_hash' => hash('sha256', 'verification-claim-token'),
             'expires_at' => now()->addDay(),
             'responded_at' => now()->subMinute(),
@@ -117,6 +117,7 @@ class RegistrationTest extends TestCase
         $this->assertSame($inviter->id, $partnership->initiator_user_id);
         $this->assertSame($newUser->id, $partnership->partner_user_id);
         $this->assertSame('drill_sergeant', $partnership->role);
+        $this->assertFalse($partnership->notify_on_alerts);
         $this->assertSame('active', $partnership->status);
     }
 

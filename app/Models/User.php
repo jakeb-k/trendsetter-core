@@ -116,4 +116,25 @@ class User extends Authenticatable
     {
         return $this->hasMany(GoalPartnership::class, 'partner_user_id');
     }
+
+    /**
+     * A user can be the subject of many partnership alert events.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function subjectPartnerAlertEvents()
+    {
+        return $this->hasMany(GoalPartnershipAlertEvent::class, 'subject_user_id');
+    }
+
+    /**
+     * A user can receive many partnership alert events.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function receivedPartnerAlertEvents()
+    {
+        return $this->hasMany(GoalPartnershipAlertEvent::class, 'recipient_user_id');
+    }
+
 }

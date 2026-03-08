@@ -14,6 +14,7 @@ class GoalPartnership extends Model
     protected function casts(): array
     {
         return [
+            'notify_on_alerts' => 'boolean',
             'paused_at' => 'datetime',
         ];
     }
@@ -47,4 +48,15 @@ class GoalPartnership extends Model
     {
         return $this->belongsTo(User::class, 'partner_user_id');
     }
+
+    /**
+     * A goal partnership can record many alert evaluations over time.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function alertEvents()
+    {
+        return $this->hasMany(GoalPartnershipAlertEvent::class, 'partnership_id');
+    }
+
 }

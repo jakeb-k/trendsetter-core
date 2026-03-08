@@ -67,6 +67,10 @@ class GoalController extends Controller
      */
     public function getGoalEventFeedback(Goal $goal)
     {
+        if ($goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $eventFeedback = []; 
         foreach($goal->events as $event){
             if($event->feedback()->exists()){

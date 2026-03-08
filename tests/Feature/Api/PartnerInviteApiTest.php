@@ -7,6 +7,7 @@ use App\Models\Goal;
 use App\Models\GoalPartnerInvite;
 use App\Models\GoalPartnership;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
@@ -471,5 +472,154 @@ class PartnerInviteApiTest extends TestCase
         $this->assertSame('expired', $invite->status);
         $this->assertNotNull($invite->responded_at);
         $this->assertNotSame($oldTokenHash, $invite->token_hash);
+    }
+
+    public function test_invite_creation_is_throttled_during_burst_requests(): void
+    {
+        Mail::fake();
+
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+
+        $sawCreatedResponse = false;
+        $sawThrottleResponse = false;
+
+        for ($attempt = 1; $attempt <= 40; $attempt++) {
+            $goal = Goal::factory()->create([
+                'user_id' => $owner->id,
+            ]);
+
+            $response = $this
+                ->withServerVariables(['REMOTE_ADDR' => '203.0.113.10'])
+                ->postJson("/api/v1/goals/{$goal->id}/partner-invites", [
+                    'invitee_email' => "burst{$attempt}@example.com",
+                    'role' => 'cheerleader',
+                    'notify_on_alerts' => true,
+                ]);
+
+            if ($response->status() === 201) {
+                $sawCreatedResponse = true;
+            }
+
+            if ($response->status() === 429) {
+                $sawThrottleResponse = true;
+                break;
+            }
+        }
+
+        $this->assertTrue($sawCreatedResponse);
+        $this->assertTrue($sawThrottleResponse, 'Expected invite creation throttle to activate during burst requests.');
+    }
+
+    public function test_resend_is_rejected_when_cooldown_is_active_without_mutating_invite_state(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-02-10 08:00:00'));
+        Mail::fake();
+
+        $owner = User::factory()->create();
+        $goal = Goal::factory()->create([
+            'user_id' => $owner->id,
+        ]);
+
+        $invite = GoalPartnerInvite::create([
+            'goal_id' => $goal->id,
+            'inviter_user_id' => $owner->id,
+            'invitee_email' => 'cooldown@example.com',
+            'status' => 'pending',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+            'token_hash' => hash('sha256', 'cooldown-token'),
+            'expires_at' => now()->addDay(),
+            'last_sent_at' => Carbon::now(),
+        ]);
+
+        $originalTokenHash = $invite->token_hash;
+        $originalLastSentAt = $invite->last_sent_at;
+
+        Sanctum::actingAs($owner);
+
+        $this->postJson("/api/v1/partner-invites/{$invite->id}/resend")
+            ->assertStatus(429);
+
+        $invite->refresh();
+
+        $this->assertSame('pending', $invite->status);
+        $this->assertSame($originalTokenHash, $invite->token_hash);
+        $this->assertNotNull($originalLastSentAt);
+        $this->assertNotNull($invite->last_sent_at);
+        $this->assertTrue($invite->last_sent_at->equalTo($originalLastSentAt));
+
+        Mail::assertNothingSent();
+        Carbon::setTestNow();
+    }
+
+    public function test_create_invite_mail_failure_does_not_leave_pending_invite_state_behind(): void
+    {
+        Mail::shouldReceive('to')
+            ->once()
+            ->andThrow(new \RuntimeException('Simulated mail transport outage'));
+
+        $owner = User::factory()->create();
+        $goal = Goal::factory()->create([
+            'user_id' => $owner->id,
+        ]);
+
+        Sanctum::actingAs($owner);
+
+        $response = $this->postJson("/api/v1/goals/{$goal->id}/partner-invites", [
+            'invitee_email' => 'mail-failure@example.com',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+        ]);
+
+        $this->assertGreaterThanOrEqual(500, $response->status());
+        $this->assertLessThan(600, $response->status());
+
+        $this->assertDatabaseCount('goal_partner_invites', 0);
+    }
+
+    public function test_resend_mail_failure_keeps_existing_invite_state_consistent(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-02-10 09:00:00'));
+
+        $owner = User::factory()->create();
+        $goal = Goal::factory()->create([
+            'user_id' => $owner->id,
+        ]);
+
+        $invite = GoalPartnerInvite::create([
+            'goal_id' => $goal->id,
+            'inviter_user_id' => $owner->id,
+            'invitee_email' => 'mail-failure-resend@example.com',
+            'status' => 'pending',
+            'role' => 'cheerleader',
+            'notify_on_alerts' => true,
+            'token_hash' => hash('sha256', 'resend-mail-failure-old-token'),
+            'expires_at' => now()->addDay(),
+            'last_sent_at' => Carbon::parse('2026-02-10 08:00:00'),
+        ]);
+
+        $originalTokenHash = $invite->token_hash;
+        $originalLastSentAt = $invite->last_sent_at;
+
+        Mail::shouldReceive('to')
+            ->once()
+            ->andThrow(new \RuntimeException('Simulated mail transport outage'));
+
+        Sanctum::actingAs($owner);
+
+        $response = $this->postJson("/api/v1/partner-invites/{$invite->id}/resend");
+
+        $this->assertGreaterThanOrEqual(500, $response->status());
+        $this->assertLessThan(600, $response->status());
+
+        $invite->refresh();
+        $this->assertSame('pending', $invite->status);
+        $this->assertSame($originalTokenHash, $invite->token_hash);
+        $this->assertNotNull($originalLastSentAt);
+        $this->assertNotNull($invite->last_sent_at);
+        $this->assertTrue($invite->last_sent_at->equalTo($originalLastSentAt));
+
+        Carbon::setTestNow();
     }
 }

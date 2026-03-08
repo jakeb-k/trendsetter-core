@@ -5,16 +5,23 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use App\Models\EventFeedback;
 use App\Models\Goal;
+use App\Models\GoalPartnershipAlertEvent;
+use App\Services\GoalPartnershipAlertEvaluator;
+use App\Services\PartnershipAlertEvaluationSource;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class EventController extends Controller
 {
     public function getEventFeedback(Event $event)
     {
+        if ($event->goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         //@todo Implement logic that gets the current streak count
         return [
             'feedback' => $event->feedback()->orderBy('created_at', 'desc')->get(),
@@ -32,7 +39,7 @@ class EventController extends Controller
         $request->validate([
             'goal_id' => 'required|numeric|exists:goals,id',
             'title' => 'required|string|max:50',
-            'description' => 'nullable|string|max:255',
+            'description' => 'required|string|max:255',
             'frequency' => ['required', Rule::in(['weekly', 'monthly'])],
             'times_per_week' => 'required|numeric|gt:0|max:7',
             'duration_in_weeks' => 'required|numeric|gt:0',
@@ -40,6 +47,10 @@ class EventController extends Controller
         ]);
 
         $goal = Goal::find($request->goal_id);
+        if ($goal && $goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if ($goal && $goal->status === 'completed') {
             return response()->json([
                 'message' => 'Cannot add events to a completed goal.',
@@ -71,10 +82,19 @@ class EventController extends Controller
      *
      * @param Request $request
      * @param Event $event
+     * @param GoalPartnershipAlertEvaluator $goalPartnershipAlertEvaluator
      * @return JsonResponse
      */
-    public function storeEventFeedback(Request $request, Event $event)
+    public function storeEventFeedback(
+        Request $request,
+        Event $event,
+        GoalPartnershipAlertEvaluator $goalPartnershipAlertEvaluator
+    )
     {
+        if ($event->goal->user_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'note' => 'required|string|max:255',
             'status' => 'required|in:completed,skipped,partial,struggled,nailed_it',
@@ -102,6 +122,87 @@ class EventController extends Controller
             $statusCode = 201;
         }
 
-        return response()->json($eventFeedback, $statusCode);
+        $partnership = $event->goal->partnership;
+        $partnerAlert = [
+            'attempted' => false,
+            'status' => 'not_applicable',
+            'message' => null,
+            'outcome' => null,
+        ];
+
+        if ($partnership) {
+            $partnerAlert['attempted'] = true;
+
+            try {
+                $alertEvent = $goalPartnershipAlertEvaluator->evaluate(
+                    $partnership,
+                    PartnershipAlertEvaluationSource::LogSubmit
+                );
+
+                $partnerAlert = $this->buildPartnerAlertPayload($alertEvent);
+            } catch (\RuntimeException $exception) {
+                rescue(function () use ($exception): void {
+                    report($exception);
+                }, report: false);
+                $partnerAlert = [
+                    'attempted' => true,
+                    'status' => 'failed',
+                    'message' => Str::contains(strtolower($exception->getMessage()), 'no longer available')
+                        ? 'Feedback saved, but your partnership is no longer active, so your partner was not alerted.'
+                        : 'Feedback saved, but there was an issue alerting your partner.',
+                    'outcome' => 'failed',
+                ];
+            } catch (\Throwable $exception) {
+                rescue(function () use ($exception): void {
+                    report($exception);
+                }, report: false);
+                $partnerAlert = [
+                    'attempted' => true,
+                    'status' => 'failed',
+                    'message' => 'Feedback saved, but there was an issue alerting your partner.',
+                    'outcome' => 'failed',
+                ];
+            }
+        }
+
+        return response()->json([
+            'feedback' => $eventFeedback,
+            'partner_alert' => $partnerAlert,
+        ], $statusCode);
+    }
+
+    /**
+     * Build a frontend-friendly alerting status payload from evaluator outcomes.
+     *
+     * @param GoalPartnershipAlertEvent $alertEvent
+     * @return array{attempted:bool,status:string,message:string|null,outcome:string}
+     */
+    private function buildPartnerAlertPayload(GoalPartnershipAlertEvent $alertEvent): array
+    {
+        $outcome = (string) $alertEvent->outcome;
+
+        if ($outcome === 'generated') {
+            return [
+                'attempted' => true,
+                'status' => 'queued',
+                'message' => null,
+                'outcome' => $outcome,
+            ];
+        }
+
+        $message = match ($outcome) {
+            'suppressed_notify_disabled' => 'Feedback saved. Partner alerts are turned off for this partnership.',
+            'suppressed_paused' => 'Feedback saved. Partnership alerts are currently paused.',
+            'suppressed_rate_limited' => 'Feedback saved. Your partner was recently alerted, so another alert was not sent yet.',
+            'suppressed_duplicate' => 'Feedback saved. This alert was already sent earlier.',
+            default => 'Feedback saved. No partner alert was sent for this update.',
+        };
+
+        return [
+            'attempted' => true,
+            'status' => 'suppressed',
+            'message' => $message,
+            'outcome' => $outcome,
+        ];
     }
 }
