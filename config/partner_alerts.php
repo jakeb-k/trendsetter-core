@@ -3,6 +3,7 @@
 return [
     'grace_hours' => (int) env('PARTNER_ALERT_GRACE_HOURS', 6),
     'rate_limit_hours' => (int) env('PARTNER_ALERT_RATE_LIMIT_HOURS', 24),
+    'scan_recent_log_submit_hours' => (int) env('PARTNER_ALERT_SCAN_RECENT_LOG_SUBMIT_HOURS', 24),
     'consecutive_misses_threshold' => (int) env('PARTNER_ALERT_CONSECUTIVE_MISSES', 1),
     'inactivity_days' => (int) env('PARTNER_ALERT_INACTIVITY_DAYS', 3),
     'behind_pace_points' => (float) env('PARTNER_ALERT_BEHIND_PACE_POINTS', 2),

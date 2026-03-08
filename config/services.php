@@ -45,6 +45,16 @@ return [
         'expiry_hours' => env('PARTNER_INVITE_EXPIRY_HOURS', 72),
         'accepted_claim_days' => env('PARTNER_INVITE_ACCEPTED_CLAIM_DAYS', 7),
         'accepted_retention_days' => env('PARTNER_INVITE_ACCEPTED_RETENTION_DAYS', 30),
+        'resend_cooldown_seconds' => env('PARTNER_INVITE_RESEND_COOLDOWN_SECONDS', 60),
+        'auth_rate_limit_per_minute' => env('PARTNER_INVITE_AUTH_RATE_LIMIT_PER_MINUTE', 12),
+        'auth_rate_limit_per_hour' => env('PARTNER_INVITE_AUTH_RATE_LIMIT_PER_HOUR', 120),
+        'auth_ip_rate_limit_per_minute' => env('PARTNER_INVITE_AUTH_IP_RATE_LIMIT_PER_MINUTE', 30),
+        'prune_schedule_lock_minutes' => env('PARTNER_INVITE_PRUNE_LOCK_MINUTES', 30),
+    ],
+
+    'partner_notifications' => [
+        'alert_scan_schedule_lock_minutes' => env('PARTNER_ALERT_SCAN_LOCK_MINUTES', 180),
+        'prune_schedule_lock_minutes' => env('PARTNER_NOTIFICATION_PRUNE_LOCK_MINUTES', 60),
     ],
 
 ];
