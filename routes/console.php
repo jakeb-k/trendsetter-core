@@ -31,14 +31,27 @@ Artisan::command('partner-invites:prune', function (PartnerInviteRegistrationSer
 
 Artisan::command('goal-partnerships:evaluate-alerts', function (GoalPartnershipAlertEvaluator $goalPartnershipAlertEvaluator) {
     $evaluatedCount = 0;
+    $recentLogSubmitCutoff = now()->subHours((int) config('partner_alerts.scan_recent_log_submit_hours', 24));
+    $rateLimitCutoff = now()->subHours((int) config('partner_alerts.rate_limit_hours', 24));
 
     GoalPartnership::query()
         ->where('status', 'active')
         ->where('notify_on_alerts', true)
         ->whereHas('goal', function ($query) {
-            $query->where('status', '!=', 'completed');
+            $query
+                ->where('status', '!=', 'completed')
+                ->whereHas('events');
         })
-        ->whereHas('goal.events')
+        ->whereDoesntHave('alertEvents', function ($query) use ($recentLogSubmitCutoff) {
+            $query
+                ->where('evaluation_source', PartnershipAlertEvaluationSource::LogSubmit->value)
+                ->where('evaluated_at', '>=', $recentLogSubmitCutoff);
+        })
+        ->whereDoesntHave('alertEvents', function ($query) use ($rateLimitCutoff) {
+            $query
+                ->where('outcome', 'generated')
+                ->where('evaluated_at', '>=', $rateLimitCutoff);
+        })
         ->orderBy('id')
         ->chunkById((int) config('partner_alerts.scan_chunk_size', 200), function ($partnerships) use ($goalPartnershipAlertEvaluator, &$evaluatedCount): void {
             foreach ($partnerships as $partnership) {
@@ -74,6 +87,14 @@ Artisan::command('partner-notifications:prune', function () {
     $this->info("Deleted {$readDeleted} read partner notification(s).");
 })->purpose('Prune suppressed partner alert events and old read notifications');
 
-Schedule::command('partner-invites:prune')->dailyAt('00:00');
-Schedule::command('goal-partnerships:evaluate-alerts')->dailyAt('01:00');
-Schedule::command('partner-notifications:prune')->dailyAt('01:30');
+Schedule::command('partner-invites:prune')
+    ->dailyAt('00:00')
+    ->withoutOverlapping((int) config('services.partner_invites.prune_schedule_lock_minutes', 30));
+
+Schedule::command('goal-partnerships:evaluate-alerts')
+    ->dailyAt('01:00')
+    ->withoutOverlapping((int) config('services.partner_notifications.alert_scan_schedule_lock_minutes', 180));
+
+Schedule::command('partner-notifications:prune')
+    ->dailyAt('01:30')
+    ->withoutOverlapping((int) config('services.partner_notifications.prune_schedule_lock_minutes', 60));

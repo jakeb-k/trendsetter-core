@@ -30,9 +30,13 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'listGoalPartnerInvites'])->name('api.goals.partner_invites.get');
 
-        Route::post('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'createGoalPartnerInvite'])->name('api.goals.partner_invites.store');
+        Route::post('/goals/{goal}/partner-invites', [PartnerInviteController::class, 'createGoalPartnerInvite'])
+            ->middleware('throttle:partner-invite-authenticated')
+            ->name('api.goals.partner_invites.store');
 
-        Route::post('/partner-invites/{invite}/resend', [PartnerInviteController::class, 'resendGoalPartnerInviteEmail'])->name('api.partner_invites.resend');
+        Route::post('/partner-invites/{invite}/resend', [PartnerInviteController::class, 'resendGoalPartnerInviteEmail'])
+            ->middleware('throttle:partner-invite-authenticated')
+            ->name('api.partner_invites.resend');
 
         Route::delete('/partner-invites/{invite}', [PartnerInviteController::class, 'cancelGoalPartnerInvite'])->name('api.partner_invites.cancel');
 
